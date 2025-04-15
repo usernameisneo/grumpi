@@ -23,7 +23,7 @@ enable_ui = true
 
 
 [logging]
-log_level = "DEBUG" # Or "INFO", "WARNING" etc.
+log_level = "INFO" # Or "DEBUG", "WARNING" etc.
 
 [paths]
 # Absolute or relative paths from the server's execution directory

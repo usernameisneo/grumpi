@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 import asyncio # Keep asyncio if used elsewhere in the file
 
 # Assuming these are correctly imported or defined elsewhere
-from .config import AppConfig
+from .config import AppConfig, PersonalityInstanceConfig 
 from lollms_server.utils.file_utils import safe_load_module, add_path_to_sys_path
 
 logger = logging.getLogger(__name__)
@@ -63,13 +63,22 @@ class PersonalityConfig(BaseModel):
 # (The Personality class remains largely the same, but accesses updated config fields)
 class Personality:
     """Represents a loaded lollms personality."""
-    def __init__(self, config: PersonalityConfig, path: Path, assets_path: Path, script_module: Optional[Any] = None):
+    def __init__(
+                    self, 
+                    config: PersonalityConfig, 
+                    path: Path, 
+                    assets_path: Path, 
+                    script_module: Optional[Any] = None,
+                    instance_config: Optional[PersonalityInstanceConfig] = None):
+        self.name = config.name
         self.config = config
         self.path = path
         self.assets_path = assets_path
         self.script_module = script_module
-        # Use the required 'name' field from the config
-        self.name = config.name
+        # --- Store instance_config ---
+        # This holds settings like 'enabled', 'max_execution_retries' from config.toml
+        self.instance_config = instance_config if instance_config is not None else PersonalityInstanceConfig() # Use default if none provided
+        # --- End Store ---        
 
     @property
     def is_scripted(self) -> bool:
@@ -131,7 +140,7 @@ class PersonalityManager:
             logger.warning("No personality folders configured or found.")
             return
         # Get the configuration map for personalities
-        enabled_map = self.config.personalities_config or {}
+        instance_config_map = self.config.personalities_config or {}
         
         # Use asyncio.gather to run async loading tasks concurrently
         # Need to make _load_personality async first
@@ -141,17 +150,21 @@ class PersonalityManager:
             for potential_path in folder.iterdir():
                 if potential_path.is_dir():
                     personality_folder_name = potential_path.name
-                    # --- Check if personality is explicitly disabled in config ---
-                    instance_config = enabled_map.get(personality_folder_name)
-                    is_enabled = True # Default to enabled
-                    if instance_config is not None: # Check if an entry exists
-                        is_enabled = instance_config.enabled # Use the configured value
+
+                    # --- Get specific instance config for this folder name ---
+                    instance_config: Optional[PersonalityInstanceConfig] = instance_config_map.get(personality_folder_name)
+                    is_enabled = True # Default
+                    if instance_config is not None:
+                        is_enabled = instance_config.enabled
 
                     if not is_enabled:
-                        logger.info(f"Skipping disabled personality: '{personality_folder_name}' (disabled in config.toml)")
-                        continue # Skip loading this personality
+                        logger.info(f"Skipping disabled personality: '{personality_folder_name}'")
+                        continue
                     # --- End Check ---
-                    self._load_personality(potential_path) # Keep sync for now
+
+                    # Pass the found instance_config (or None) to _load_personality
+                    self._load_personality(potential_path, instance_config)
+
 
         logger.info(f"Loaded {len(self._personalities)} personalities.")
         if self._load_errors:
@@ -161,7 +174,7 @@ class PersonalityManager:
 
 
     # Make _load_personality async to handle async dependency checks
-    async def _load_personality_async(self, path: Path):
+    async def _load_personality_async(self, path: Path, instance_config: Optional[PersonalityInstanceConfig]):
         # ... (async version of loading including await ensure_dependencies) ...
         # This might be needed if dependency checks become slow, but adds complexity
         # to the initial synchronous load_personalities call in main.py lifespan.
@@ -170,11 +183,13 @@ class PersonalityManager:
 
 
     # Keep _load_personality synchronous for now to simplify startup lifespan
-    def _load_personality(self, path: Path):
+    def _load_personality(self, path: Path, instance_config: Optional[PersonalityInstanceConfig]):
         """Loads a single personality from its directory."""
         config_file = path / "config.yaml"
         assets_path = path / "assets"
         script_module = None
+        
+        personality_folder_name = path.name
 
         if not config_file.exists():
             return
@@ -233,7 +248,8 @@ class PersonalityManager:
                 config=p_config,
                 path=path,
                 assets_path=assets_path,
-                script_module=script_module
+                script_module=script_module,
+                instance_config=instance_config # From config.toml [personalities_config]
             )
 
             if personality.name in self._personalities:
