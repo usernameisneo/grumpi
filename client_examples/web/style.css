@@ -1,0 +1,128 @@
+/* client_examples/web/style.css */
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 20px;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+h1, h2 {
+    color: #2c3e50;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+input[type="text"],
+input[type="password"],
+select,
+textarea {
+    width: 95%; /* Slightly less than 100% to prevent overflow */
+    max-width: 500px; /* Max width for larger screens */
+    padding: 8px;
+    margin-bottom: 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box; /* Include padding in width */
+}
+
+textarea {
+    min-height: 60px;
+    resize: vertical;
+}
+
+button {
+    background-color: #3498db;
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 5px;
+    margin-bottom: 5px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #2980b9;
+}
+
+button:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
+
+.config-section,
+.generation-section,
+.results-section {
+    background-color: #fff;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.control-group {
+    margin-bottom: 15px;
+}
+
+.options-group label {
+    display: inline-block;
+    margin-right: 15px;
+    font-weight: normal;
+}
+.options-group input[type="checkbox"]{
+    width: auto; /* Override default width */
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+
+.status {
+    font-style: italic;
+    color: #7f8c8d;
+    margin-top: 10px;
+}
+
+.status.error {
+    color: #c0392b;
+    font-weight: bold;
+}
+.status.success {
+    color: #27ae60;
+}
+
+#results-output {
+    background-color: #ecf0f1;
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    min-height: 100px;
+    white-space: pre-wrap; /* Preserve whitespace and wrap */
+    word-wrap: break-word;
+    margin-bottom: 10px;
+}
+#results-output img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin-top: 10px;
+}
+
+.metadata {
+    font-size: 0.9em;
+    color: #555;
+    background-color: #f9f9f9;
+    padding: 10px;
+    border: 1px dashed #ddd;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}

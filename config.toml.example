@@ -1,0 +1,100 @@
+# lollms_server Configuration Example
+
+[server]
+host = "0.0.0.0"
+port = 9600
+# For production, consider using more workers based on your CPU cores
+# workers = 4 # Handled by Uvicorn command line usually
+
+
+[logging]
+log_level = "DEBUG" # Or "INFO", "WARNING" etc.
+
+[paths]
+# Absolute or relative paths from the server's execution directory
+personalities_folder = "personal_personalities/"
+bindings_folder = "personal_bindings/"
+functions_folder = "personal_functions/"
+models_folder = "models/" # Base folder for models TTT/TTI/TTV/TTM subfolders expected
+# Optional: Add paths to default/example components if desired
+example_personalities_folder = "examples/personalities/"
+example_bindings_folder = "examples/bindings/"
+example_functions_folder = "examples/functions/"
+
+
+[security]
+# List of allowed API keys. Generate strong random keys for production.
+# KEEP THIS FILE SECURE or use environment variables.
+allowed_api_keys = ["user1_key_abc123", "user2_key_def456"]
+
+[defaults]
+# Default bindings and models to use if not specified in the request
+# The key (e.g., "default_ollama") is the logical name used in the API.
+# The `binding` refers to the Python module name in the bindings folder.
+# The `model` is the specific model identifier the binding understands.
+
+# Text-to-Text (TTT)
+ttt_binding = "default_ollama" # Logical name of the binding instance defined below
+ttt_model = "llama3:latest"    # Default model for the binding
+
+# Text-to-Image (TTI)
+tti_binding = "default_tti_dummy"
+tti_model = "dummy_stable_diffusion"
+
+# Text-to-Video (TTV) - Placeholder
+ttv_binding = "default_ttv_dummy"
+ttv_model = "dummy_video_gen"
+
+# Text-to-Music (TTM) - Placeholder
+ttm_binding = "default_ttm_dummy"
+ttm_model = "dummy_music_gen"
+
+# These are general defaults if not specified by personality or request
+default_context_size = 4096     # Example: Default context window
+default_max_output_tokens = 1024 # Example: Default max generation length
+
+[bindings]
+# Define specific binding instances here
+# Each key (e.g., "default_ollama") is a logical name for this binding setup.
+# `type` refers to the Python module/class name in the bindings folder (e.g., `ollama_binding`).
+# Other keys are configuration specific to that binding type.
+
+[bindings.default_ollama]
+type = "ollama_binding" # Matches filename ollama_binding.py in examples/bindings or personal_bindings
+host = "http://localhost:11434" # Specific config for the ollama binding
+
+[bindings.default_openai]
+type = "openai_binding"
+api_key = "YOUR_OPENAI_API_KEY" # Consider using environment variables for secrets
+# base_url = "OPTIONAL_OPENAI_COMPATIBLE_ENDPOINT"
+
+[bindings.my_dalle_binding]
+type = "dalle_binding"          # Matches the type_name in dalle_binding.py
+# Provide API Key here OR set OPENAI_API_KEY environment variable
+api_key = "sk-YourActualOpenAIKeyHere_KEEP_SECRET"
+# Optional overrides for defaults:
+model = "dall-e-3"              # Explicitly set model if desired
+# default_size = "1792x1024"    # Optional: override default size
+# default_quality = "hd"        # Optional: override default quality
+# default_style = "natural"     # Optional: override default style
+
+[bindings.default_tti_dummy]
+type = "dummy_binding"
+mode = "tti" # Custom config for the dummy binding
+
+[bindings.default_ttv_dummy]
+type = "dummy_binding"
+mode = "ttv"
+
+[bindings.default_ttm_dummy]
+type = "dummy_binding"
+mode = "ttm"
+
+
+[resource_manager]
+# Example: Limit concurrent model loads/generations requiring significant VRAM
+# Strategy can be 'simple_lock' (one at a time) or 'semaphore' (N at a time)
+# This is a basic example, real VRAM management is complex.
+gpu_strategy = "semaphore"
+gpu_limit = 1 # Max number of concurrent "heavy" tasks (e.g., model loads or generations on GPU)
+queue_timeout = 120 # Seconds to wait in queue before failing request

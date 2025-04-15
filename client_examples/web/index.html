@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOLLMS Server Client</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>LOLLMS Server Web Client</h1>
+
+    <div class="config-section">
+        <h2>Configuration</h2>
+        <label for="server-url">Server URL:</label>
+        <input type="text" id="server-url" value="http://localhost:9600">
+        <label for="api-key">API Key:</label>
+        <input type="password" id="api-key" placeholder="Enter API Key if required">
+        <button id="connect-button">Connect & Load Data</button>
+        <p id="connect-status" class="status"></p>
+    </div>
+
+    <div class="generation-section" id="generation-controls" style="display: none;">
+        <h2>Generation Request</h2>
+
+        <div class="control-group">
+            <label for="personality-select">Personality:</label>
+            <select id="personality-select">
+                <option value="">-- None --</option>
+                <!-- Options populated by JS -->
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="binding-select">Binding:</label>
+            <select id="binding-select">
+                <option value="">-- Use Default --</option>
+                <!-- Options populated by JS -->
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="model-select">Model:</label>
+            <select id="model-select">
+                <option value="">-- Use Default --</option>
+                <!-- Options populated by JS -->
+            </select>
+            <button id="refresh-models-button" disabled>Refresh Models</button>
+        </div>
+
+        <div class="control-group">
+            <label for="generation-type">Type:</label>
+            <select id="generation-type">
+                <option value="ttt" selected>Text-to-Text (TTT)</option>
+                <option value="tti">Text-to-Image (TTI)</option>
+                <!-- Add TTV/TTM later if needed -->
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="prompt">Prompt:</label>
+            <textarea id="prompt" rows="4" placeholder="Enter your prompt here..."></textarea>
+        </div>
+
+        <div class="control-group options-group">
+             <label>
+                <input type="checkbox" id="stream-checkbox"> Stream Response (TTT only)
+            </label>
+             <button id="add-params-button">Add Parameters</button>
+             <button id="add-extra-data-button">Add Extra Data</button>
+        </div>
+        <div id="params-container" style="display: none;">
+             <label for="parameters">Parameters (JSON):</label>
+             <textarea id="parameters" rows="3" placeholder='{"max_tokens": 512, "temperature": 0.7}'></textarea>
+        </div>
+         <div id="extra-data-container" style="display: none;">
+             <label for="extra-data">Extra Data (JSON):</label>
+             <textarea id="extra-data" rows="3" placeholder='{"context": "Some relevant info..."}'></textarea>
+        </div>
+
+
+        <button id="generate-button" disabled>Generate</button>
+        <p id="generate-status" class="status"></p>
+
+    </div>
+
+    <div class="results-section">
+        <h2>Results</h2>
+        <div id="results-output">
+            <!-- Output will appear here -->
+        </div>
+        <pre id="results-metadata" class="metadata"></pre>
+    </div>
+
+    <script src="lollms-client.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

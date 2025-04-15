@@ -1,0 +1,41 @@
+# examples/personalities/lz_generic/config.yaml
+# PyAIPeronality Chatbot conditionning file (Example header)
+# Author : ParisNeo
+# Version : 1.0
+# Description : Provided by lollms_server maintainer
+
+lollms_version: 0.9.0 # Optional info
+name: my_coolbot
+version: 1.0        # Personality version
+author: ParisNeo    # Required
+user_name: user     # Optional, defaults provided
+language: english   # Optional, defaults provided
+category: generic   # Optional, defaults provided
+tags: [general, chat, versatile] # Optional server field
+
+personality_description: | # Required
+  A generic LoLLMs personality for general discussion and tasks. Adaptable and helpful.
+personality_conditioning: | # Required
+  Act as a friendly and helpful AI assistant. Engage in polite conversation and assist the user with their requests comprehensively.
+welcome_message: "Hello! I am a generic assistant. How can I assist you today?" # Optional override
+
+user_message_prefix: "Human"  # Optional override
+link_text: "\n---\n"         # Optional override
+ai_message_prefix: "AI"       # Optional override
+
+dependencies: [] # Example: ["wikipedia"] if it needed it
+anti_prompts: ["I cannot fulfill this request"] # Optional
+disclaimer: "AI responses may contain inaccuracies. Verify critical information." # Optional
+
+# Default model parameters (Optional)
+model_temperature: 0.7
+model_n_predicts: 2048
+model_top_k: 50
+model_top_p: 0.95
+
+# UI hints (Optional)
+icon: "logo.png" # Assumes examples/personalities/lz_generic/assets/logo.png exists
+prompts_list: [] # Optional
+
+# Server-specific fields (Optional)
+script_path: null # Not a scripted personality

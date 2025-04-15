@@ -1,0 +1,5 @@
+# client_examples/requirements.txt
+requests>=2.28.0       # For basic HTTP requests
+sseclient-py>=1.7.2   # For handling Server-Sent Events (streaming)
+pillow>=9.0.0         # For saving received image data
+# Add other libraries if your examples need them

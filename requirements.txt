@@ -1,0 +1,12 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
+toml>=0.10.0
+python-dotenv>=1.0.0 # Good practice for managing env vars like API keys if needed later
+aiofiles>=23.1.0 # For async file operations if needed
+pyyaml>=6.0 # For reading personality config.yaml
+pipmaster
+# Optional, example binding dependencies (add as needed, or instruct users)
+# openai>=1.0.0
+# ollama>=0.1.7
+# requests>=2.28.0
