@@ -5,6 +5,21 @@ host = "0.0.0.0"
 port = 9600
 # For production, consider using more workers based on your CPU cores
 # workers = 4 # Handled by Uvicorn command line usually
+# --- Optional: Allowed Origins for CORS ---
+# List the specific hostnames/ports allowed to make requests to this server.
+# Needed for web browsers accessing the API from a different origin (domain/port).
+# Use "*" to allow all origins (less secure, suitable for local dev).
+# Default allows common localhost ports and file:// (null origin).
+# allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173", "https://my-domain.com"]
+# allowed_origins = ["*"] # Allow all - USE WITH CAUTION
+
+
+# --- Optional: Web UI Configuration ---
+[webui]
+# Set to false to disable serving the built-in web UI (e.g., if hosting UI separately)
+enable_ui = true
+# Optional: Specify UI build directory relative to project root (default is webui/dist)
+# build_directory = "custom_ui/build"
 
 
 [logging]
@@ -98,3 +113,15 @@ mode = "ttm"
 gpu_strategy = "semaphore"
 gpu_limit = 1 # Max number of concurrent "heavy" tasks (e.g., model loads or generations on GPU)
 queue_timeout = 120 # Seconds to wait in queue before failing request
+
+
+[personalities_config]
+  # Example: Explicitly disable the dangerous code executor
+  # The key MUST match the personality's folder name.
+  # python_builder_executor = { enabled = false }
+
+  # Example: Explicitly enable another one (redundant unless default changes)
+  # lollms = { enabled = true }
+
+  # Example: Personality folder 'experimental_rag' exists but is disabled here
+  # experimental_rag = { enabled = false }

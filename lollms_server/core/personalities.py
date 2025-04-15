@@ -130,7 +130,9 @@ class PersonalityManager:
         if not personality_folders:
             logger.warning("No personality folders configured or found.")
             return
-
+        # Get the configuration map for personalities
+        enabled_map = self.config.personalities_config or {}
+        
         # Use asyncio.gather to run async loading tasks concurrently
         # Need to make _load_personality async first
         # For now, keep it synchronous loading during startup
@@ -138,6 +140,17 @@ class PersonalityManager:
             logger.info(f"Scanning for personalities in: {folder}")
             for potential_path in folder.iterdir():
                 if potential_path.is_dir():
+                    personality_folder_name = potential_path.name
+                    # --- Check if personality is explicitly disabled in config ---
+                    instance_config = enabled_map.get(personality_folder_name)
+                    is_enabled = True # Default to enabled
+                    if instance_config is not None: # Check if an entry exists
+                        is_enabled = instance_config.enabled # Use the configured value
+
+                    if not is_enabled:
+                        logger.info(f"Skipping disabled personality: '{personality_folder_name}' (disabled in config.toml)")
+                        continue # Skip loading this personality
+                    # --- End Check ---
                     self._load_personality(potential_path) # Keep sync for now
 
         logger.info(f"Loaded {len(self._personalities)} personalities.")

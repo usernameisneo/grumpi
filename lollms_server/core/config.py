@@ -16,7 +16,23 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 9600
     # workers: int = 1 # Worker count is usually managed by Uvicorn/Gunicorn
+    # Default allows common local development origins + file:// (use with caution)
+    allowed_origins: List[str] = Field(default=[
+        "http://localhost",
+        "http://localhost:8000", # Common dev port
+        "http://localhost:5173", # Default Vite port
+        "http://127.0.0.1",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:5173",
+        "null" # For file:// access - REMOVE FOR PRODUCTION if not needed
+    ])
 
+# --- Add WebUI Config Model ---
+class WebUIConfig(BaseModel):
+    # Enable/disable serving the web UI static files
+    enable_ui: bool = False # Default to disabled if section exists but key missing
+    # Optional: Specify a custom build directory relative to project root
+    # build_directory: str = "webui/dist" # Default handled in main.py logic    
 class LoggingConfig(BaseModel):
     log_level: str = "INFO"
     level:int = 0
@@ -51,6 +67,14 @@ class ResourceManagerConfig(BaseModel):
     gpu_limit: int = 1
     queue_timeout: int = 120 # seconds
 
+
+# --- NEW: Model for individual personality settings in config ---
+class PersonalityInstanceConfig(BaseModel):
+    enabled: bool = True # Default to enabled if entry exists
+    # Add other per-personality overrides here later if needed
+    # e.g., specific_model: Optional[str] = None
+    #    
+
 class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -59,6 +83,10 @@ class AppConfig(BaseModel):
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     bindings: Dict[str, Dict[str, Any]] = Field(default_factory=dict) # Specific binding configs
     resource_manager: ResourceManagerConfig = Field(default_factory=ResourceManagerConfig)
+    webui: Optional[WebUIConfig] = None
+    # --- NEW: Optional dictionary for personality enable/disable states ---
+    # Key: personality name (folder name), Value: PersonalityInstanceConfig
+    personalities_config: Optional[Dict[str, PersonalityInstanceConfig]] = Field(default_factory=dict)
 
 # --- Configuration Loading Function ---
 

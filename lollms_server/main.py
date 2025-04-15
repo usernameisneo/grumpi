@@ -2,10 +2,14 @@
 import sys
 import os
 from pathlib import Path
-from fastapi import FastAPI, Depends, HTTPException, Request # Request needed for dependencies
+from fastapi import FastAPI, HTTPException, Request # Request needed for dependencies
 from contextlib import asynccontextmanager
 import logging
 import uvicorn
+from fastapi.staticfiles import StaticFiles # Import StaticFiles
+from fastapi.responses import FileResponse # Import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # Ensure the project root is in the Python path
 project_root = Path(__file__).resolve().parent.parent
@@ -37,7 +41,11 @@ logger = logging.getLogger(__name__)
 # Optionally silence verbose libraries like httpx if needed at DEBUG level
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-
+# Configuration - Calculate path relative to *this* file's location
+# This makes it more robust if the script is run from different CWDs
+SERVER_ROOT = Path(__file__).resolve().parent.parent
+# Default WEBUI path relative to SERVER_ROOT
+DEFAULT_WEBUI_BUILD_DIR = SERVER_ROOT / "webui" / "dist"
 
 # No longer need global manager variables here
 
@@ -71,6 +79,39 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to apply logging configuration from file: {e}", exc_info=True)
         logger.warning("Continuing with initial logging level.")
+
+    # --- Determine Web UI Status and Path ---
+    app.state.webui_enabled = False # Default to disabled
+    webui_build_dir = DEFAULT_WEBUI_BUILD_DIR # Start with default path
+    serve_ui = False
+
+    # Check if webui section exists and is enabled in config
+    if loaded_config.webui and loaded_config.webui.enable_ui:
+        serve_ui = True
+        # Optional: Check for custom build directory path in config later if needed
+        # if hasattr(loaded_config.webui, 'build_directory') and loaded_config.webui.build_directory:
+        #    webui_build_dir = SERVER_ROOT / loaded_config.webui.build_directory
+        #    logger.info(f"Using custom Web UI build directory from config: {webui_build_dir}")
+        # else:
+        #    logger.info(f"Using default Web UI build directory: {webui_build_dir}")
+        logger.info(f"Web UI serving is enabled via config.")
+    else:
+        logger.info("Web UI serving is disabled via config or config section missing.")
+
+
+    # Check if directory and index.html exist ONLY if serving is enabled
+    if serve_ui:
+        index_html_path = webui_build_dir / "index.html"
+        if not webui_build_dir.is_dir() or not index_html_path.is_file():
+             logger.warning(f"Web UI build directory or index.html missing at: {webui_build_dir}")
+             logger.warning("Web UI serving disabled because build files were not found.")
+             serve_ui = False # Disable serving if files are missing
+        else:
+             logger.info(f"Web UI build directory found at: {webui_build_dir}")
+             app.state.webui_enabled = True # Mark as enabled in state
+             app.state.webui_build_dir = webui_build_dir # Store path in state
+             app.state.webui_index_path = index_html_path # Store index path
+
 
     # --- Continue with Initialization ---
     logger.info(f"Configuration loaded.") # Visibility depends on configured level
@@ -113,43 +154,75 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# --- Middleware (Optional) ---
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    logger.debug(f"Request: {request.method} {request.url}") # Use debug for less noise
-    # Example: Add request ID or timing here later
-    response = await call_next(request)
-    logger.debug(f"Response: {response.status_code}")
-    return response
+# --- Add CORS Middleware ---
+# Read origins from the loaded config
+# Need to access config AFTER lifespan has run, so access via request or app.state later?
+# Let's configure it using the initially loaded config object. This assumes config
+# doesn't change dynamically while server is running.
 
-# --- Include API Router ---
-# Ensure this comes AFTER the app definition and lifespan
+# Load config once for setup purposes (outside lifespan)
+# This might duplicate loading slightly but ensures config is available for middleware setup
+setup_config = get_config_core()
+cors_origins = setup_config.server.allowed_origins
+logger.info(f"Configuring CORS for origins: {cors_origins}")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins, # Use list from config
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# --- End CORS Middleware ---
+
+
+# --- API Router ---
 app.include_router(api_router, prefix="/api/v1")
 
-# --- Root Endpoint ---
-@app.get("/", summary="Root endpoint", description="Provides basic server information.")
-async def read_root(request: Request): # Inject Request
-    # Basic check to ensure config loaded during lifespan
-    if not hasattr(request.app.state, 'config'):
-         raise HTTPException(status_code=503, detail="Server is starting up, configuration not yet loaded.")
 
-    # Access config from app.state via request
-    cfg_dump = request.app.state.config.model_dump(exclude={'security': {'allowed_api_keys'}})
-    return {
-        "message": "Welcome to LOLLMS Server!",
-        "version": app.version,
-        "docs": "/docs",
-        "redoc": "/redoc",
-        "loaded_config": cfg_dump # Be careful not to expose secrets if any remain
-    }
+# --- Static Files & Web UI Serving ---
+# We need to access app.state here, which is only available *after* lifespan starts.
+# This means we need to mount static files *conditionally* within endpoint logic
+# or potentially restructure how StaticFiles is mounted (e.g., inside lifespan?).
+# Mounting inside lifespan is tricky. Let's handle it conditionally in the catch-all route.
 
-# --- REMOVE Dependency Injection Utility functions that cause circular import ---
-# def get_binding_manager(): ...
-# def get_personality_manager(): ...
-# def get_function_manager(): ...
-# def get_resource_manager(): ...
+# We CAN mount the /assets path if we know the relative path, but need full path later.
+# Let's NOT mount /assets here, rely on the catch-all to serve index.html, which
+# then loads assets using relative paths from index.html's location.
 
+# --- Catch-all route for SPA ---
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_vue_app(request: Request, full_path: str):
+    """ Serves the index.html for SPA routing. """
+    # Check if Web UI is enabled AND files found during startup
+    if not getattr(request.app.state, 'webui_enabled', False):
+         raise HTTPException(status_code=404, detail="Web UI is not enabled or not found.")
 
+    index_path = getattr(request.app.state, 'webui_index_path', None)
+    build_dir = getattr(request.app.state, 'webui_build_dir', None)
+
+    if not index_path or not build_dir:
+        logger.error("Web UI paths not found in app state despite UI being enabled.")
+        raise HTTPException(status_code=500, detail="Web UI configuration error.")
+
+    # Basic security check
+    if full_path.endswith((".py", ".pyc", ".toml", ".yaml", ".log")):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Construct the potential path to a static file within the build directory
+    potential_file_path = build_dir / full_path
+
+    # If the requested path corresponds to an existing file in the build dir (e.g., CSS, JS), serve it
+    if potential_file_path.is_file():
+         logger.debug(f"Serving static file: {potential_file_path}")
+         # FastAPI automatically handles appropriate headers for common file types
+         return FileResponse(potential_file_path)
+    else:
+         # Otherwise, serve the index.html for SPA routing
+         logger.debug(f"Serving index.html for SPA route: {full_path}")
+         return FileResponse(index_path)
+    
+    
 # --- Main Execution ---
 if __name__ == "__main__":
     # Load config temporarily just for host/port
