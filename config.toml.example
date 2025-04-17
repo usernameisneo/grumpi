@@ -32,9 +32,9 @@ bindings_folder = "personal_bindings/"
 functions_folder = "personal_functions/"
 models_folder = "models/" # Base folder for models TTT/TTI/TTV/TTM subfolders expected
 # Optional: Add paths to default/example components if desired
-example_personalities_folder = "examples/personalities/"
-example_bindings_folder = "examples/bindings/"
-example_functions_folder = "examples/functions/"
+example_personalities_folder = "zoos/personalities/"
+example_bindings_folder = "zoos/bindings/"
+example_functions_folder = "zoos/functions/"
 
 
 [security]
@@ -75,7 +75,7 @@ default_max_output_tokens = 1024 # Example: Default max generation length
 # Other keys are configuration specific to that binding type.
 
 [bindings.default_ollama]
-type = "ollama_binding" # Matches filename ollama_binding.py in examples/bindings or personal_bindings
+type = "ollama_binding" # Matches filename ollama_binding.py in zoos/bindings or personal_bindings
 host = "http://localhost:11434" # Specific config for the ollama binding
 
 [bindings.default_openai]

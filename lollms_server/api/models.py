@@ -105,6 +105,10 @@ class PersonalityInfo(BaseModel):
     tags: List[str] = Field(default_factory=list)
     is_scripted: bool
     path: str
+    # --- FIX: Add missing fields ---
+    icon: Optional[str] = None # Added icon field
+    language: Optional[str] = None # Added language field
+    # --- End Fix ---
 
 class ListPersonalitiesResponse(BaseModel):
     personalities: Dict[str, PersonalityInfo] = Field(description="Dictionary of loaded personalities.")

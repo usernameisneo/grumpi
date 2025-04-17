@@ -1,4 +1,4 @@
-# examples/personalities/lz_generic/config.yaml
+# zoos/personalities/lz_generic/config.yaml
 # PyAIPeronality Chatbot conditionning file (Example header)
 # Author : ParisNeo
 # Version : 1.0
@@ -34,7 +34,7 @@ model_top_k: 50
 model_top_p: 0.95
 
 # UI hints (Optional)
-icon: "logo.png" # Assumes examples/personalities/lz_generic/assets/logo.png exists
+icon: "logo.png" # Assumes zoos/personalities/lz_generic/assets/logo.png exists
 prompts_list: [] # Optional
 
 # Server-specific fields (Optional)

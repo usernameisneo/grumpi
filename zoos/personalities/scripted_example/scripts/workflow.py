@@ -1,4 +1,4 @@
-# examples/personalities/scripted_example/scripts/code_exec_workflow.py
+# zoos/personalities/scripted_example/scripts/code_exec_workflow.py
 import logging
 import asyncio
 from typing import Any, Dict, Optional, List

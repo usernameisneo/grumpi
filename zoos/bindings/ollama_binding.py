@@ -1,4 +1,4 @@
-# examples/bindings/ollama_binding.py
+# zoos/bindings/ollama_binding.py
 import asyncio
 import logging
 from typing import Dict, Any, Optional, Union, AsyncGenerator, Tuple

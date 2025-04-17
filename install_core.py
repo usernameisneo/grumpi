@@ -5,7 +5,7 @@ import subprocess
 import venv
 import shutil
 from pathlib import Path
-
+import platform
 # --- Configuration ---
 PROJECT_ROOT = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_ROOT / "venv"

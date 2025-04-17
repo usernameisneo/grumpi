@@ -1,4 +1,4 @@
-# examples/personalities/python_builder_executor/scripts/workflow.py
+# zoos/personalities/python_builder_executor/scripts/workflow.py
 
 import logging
 import asyncio

@@ -1,4 +1,4 @@
-# examples/personalities/scripted_example/config.yaml
+# zoos/personalities/scripted_example/config.yaml
 name: scripted_code_executor # New name
 author: lollms_server Team
 version: 1.0

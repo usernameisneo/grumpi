@@ -1,4 +1,4 @@
-# examples/bindings/dummy_binding.py
+# zoos/bindings/dummy_binding.py
 import asyncio
 import logging
 import time

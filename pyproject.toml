@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "lollms_server"
 version = "0.1.0"
 authors = [
-    { name="ParisNeo", email="your_email@example.com" }, # Replace with your email
+    { name="ParisNeo", email="parisneo_ai@gmail.com" }, # Replace with your email
 ]
 description = "A multi-modal generation server compatible with LOLLMS personalities."
 readme = "README.md"
@@ -32,7 +32,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/ParisNeo/lollms_server" # Replace with actual URL later
-Bug Tracker = "https://github.com/ParisNeo/lollms_server/issues" # Replace
+BugTracker = "https://github.com/ParisNeo/lollms_server/issues" # Replace
 
 # Optional: Define extras for different bindings
 [project.optional-dependencies]
@@ -42,13 +42,28 @@ ollama = ["ollama>=0.1.7"]
 # llamacpp = ["llama-cpp-python"] # Example
 
 dev = [
-    "pytest",
-    "pytest-asyncio",
-    "httpx", # For testing FastAPI endpoints
-    "black",
-    "ruff", # Linter
+    "pytest>=7.0.0",         # Testing framework
+    "pytest-asyncio>=0.18.0", # For testing async code
+    "httpx>=0.23.0",         # Async HTTP client for testing API
+    "pytest-mock>=3.5.0",    # Fixture for easy mocking
+    "black",                 # Code formatter
+    "ruff"                   # Linter
 ]
 
 # Optional: Define entry points if you want a command-line script
 # [project.scripts]
 # lollms-server = "lollms_server.main:run_cli" # Example if you add CLI arg parsing
+
+[tool.setuptools.packages.find]
+where = ["lollms_server"]  # Look for packages under "lollms_server" directory ONLY
+include = ["lollms_server*"]    # Include anything under "lollms_server"
+
+[tool.pytest.ini_options]
+# Tell pytest to automatically handle asyncio tests
+# Requires pytest-asyncio to be installed
+asyncio_mode = "auto"
+# Optional: Add markers if you want to suppress the unknown marker warning,
+# but asyncio_mode = "auto" should make pytest aware of the marker.
+# markers = [
+#     "asyncio",
+# ]

@@ -1,4 +1,4 @@
-# examples/bindings/dalle_binding.py
+# zoos/bindings/dalle_binding.py
 import asyncio
 import logging
 import os

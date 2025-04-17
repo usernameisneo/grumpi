@@ -42,9 +42,9 @@ class PathsConfig(BaseModel):
     bindings_folder: Path = Field(default_factory=lambda: Path("personal_bindings/"))
     functions_folder: Path = Field(default_factory=lambda: Path("personal_functions/"))
     models_folder: Path = Field(default_factory=lambda: Path("models/"))
-    example_personalities_folder: Optional[Path] = Field(default_factory=lambda: Path("examples/personalities/"))
-    example_bindings_folder: Optional[Path] = Field(default_factory=lambda: Path("examples/bindings/"))
-    example_functions_folder: Optional[Path] = Field(default_factory=lambda: Path("examples/functions/"))
+    example_personalities_folder: Optional[Path] = Field(default_factory=lambda: Path("zoos/personalities/"))
+    example_bindings_folder: Optional[Path] = Field(default_factory=lambda: Path("zoos/bindings/"))
+    example_functions_folder: Optional[Path] = Field(default_factory=lambda: Path("zoos/functions/"))
 
 class SecurityConfig(BaseModel):
     allowed_api_keys: List[str] = Field(default_factory=list)
@@ -135,7 +135,7 @@ def get_config_path() -> Optional[Path]:
 
 def _resolve_paths(paths_config: PathsConfig, base_dir: Path):
     """Resolves relative paths in the PathsConfig object."""
-    for field_name in paths_config.model_fields:
+    for field_name in PathsConfig.model_fields:
         path_value = getattr(paths_config, field_name)
         if path_value and isinstance(path_value, Path) and not path_value.is_absolute():
             resolved_path = (base_dir / path_value).resolve()

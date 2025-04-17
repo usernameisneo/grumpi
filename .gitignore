@@ -173,3 +173,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 config.toml
+
+# chat app infos
+generated_images
+chat_history.json
+settings.json

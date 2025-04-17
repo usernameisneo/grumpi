@@ -1,4 +1,4 @@
-# examples/bindings/openai_binding.py
+# zoos/bindings/openai_binding.py
 import asyncio
 import logging
 from typing import Dict, Any, Optional, Union, AsyncGenerator, Tuple, List 
@@ -211,7 +211,7 @@ class OpenAIBinding(Binding):
             response = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
-                max_tokens=max_tokens,
+                max_completion_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
                 stream=False # Ensure non-streaming
@@ -262,7 +262,7 @@ class OpenAIBinding(Binding):
             stream = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
-                max_tokens=max_tokens,
+                max_completion_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
                 stream=True

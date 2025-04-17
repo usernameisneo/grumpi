@@ -118,7 +118,7 @@ The `config.toml` file controls server behavior, paths, security, defaults, and 
     *   `bindings_folder`: Location of your custom bindings (e.g., `"personal_bindings/"`).
     *   `functions_folder`: Location of your custom functions (e.g., `"personal_functions/"`).
     *   `models_folder`: Base directory for local models used by some bindings (e.g., `"models/"`). Bindings may expect subfolders like `ttt`, `tti`.
-    *   `example_*_folder`: Points to the built-in examples (e.g., `"examples/personalities/"`).
+    *   `example_*_folder`: Points to the built-in examples (e.g., `"zoos/personalities/"`).
 
 *   **`[security]`**
     *   `allowed_api_keys`: **Required.** List of secret keys clients must provide in the `X-API-Key` header. Generate strong random keys. Example: `["your-secret-key-1", "another-secure-key"]`.
@@ -319,3 +319,5 @@ Licensed under the Apache License, Version 2.0 (the "License"); you may not use 
     http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+## Discla

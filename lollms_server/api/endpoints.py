@@ -84,8 +84,13 @@ async def list_available_models_for_binding(
     logger.info(f"Request received to list available models for binding: '{binding_name}'")
     binding = binding_manager.get_binding(binding_name)
     if not binding:
-        # ... (error handling) ...
-        raise HTTPException(...)
+        # --- FIX: Raise 404 when binding is not found ---
+        logger.error(f"Binding '{binding_name}' requested for model listing not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Binding '{binding_name}' not found or not configured."
+        )
+        # --- End Fix ---
 
     try:
         # Binding now returns List[Dict] where each dict has 'name'
@@ -96,12 +101,6 @@ async def list_available_models_for_binding(
         validated_models = []
         for model_dict in models_data:
             try:
-                # Pydantic will automatically map keys from model_dict
-                # to the fields in ModelInfo. Any extra keys not defined
-                # in ModelInfo will be ignored unless captured by 'details'
-                # if we added model_config = {"extra": "allow"} to ModelInfo,
-                # but our bindings now put extras into the 'details' key themselves.
-
                 # Ensure 'details' exists if not provided by binding, Pydantic needs it
                 if 'details' not in model_dict:
                     model_dict['details'] = {}
@@ -145,7 +144,19 @@ async def list_personalities(
     try:
         # Convert Personality objects to PersonalityInfo Pydantic models
         raw_list = personality_manager.list_personalities() # Assume this returns Dict[str, Dict] for now
-        personalities_info = { name: PersonalityInfo(**info) for name, info in raw_list.items() }
+        personalities_info = {}
+        for name, info_dict in raw_list.items():
+            try:
+                # Ensure all required fields for PersonalityInfo are present
+                # Add default values here if necessary, although list_personalities should provide them
+                info_dict.setdefault('category', None) # Example if category was optional
+                info_dict.setdefault('tags', []) # Example if tags was optional
+                personalities_info[name] = PersonalityInfo(**info_dict)
+            except ValidationError as e:
+                 logger.warning(f"Failed to validate personality data for '{name}' against PersonalityInfo model: {info_dict}. Error: {e}. Skipping.")
+            except Exception as e_inner:
+                 logger.warning(f"Error processing personality data {info_dict} for '{name}': {e_inner}. Skipping.")
+
         return ListPersonalitiesResponse(personalities=personalities_info)
     except Exception as e:
         logger.error(f"Error listing personalities: {e}", exc_info=True)
@@ -195,9 +206,9 @@ async def generate(
     personality_manager: PersonalityManager = Depends(get_personality_manager_dep),
     binding_manager: BindingManager = Depends(get_binding_manager_dep),
     function_manager: FunctionManager = Depends(get_function_manager_dep),
-    resource_manager: ResourceManager = Depends(get_resource_manager_dep), # Injection is correct here
+    resource_manager: ResourceManager = Depends(get_resource_manager_dep),
     config: AppConfig = Depends(get_config_dep),
-    http_request: Request = None
+    http_request: Request = None # Keep http_request if needed internally by FastAPI/dependencies
 ):
     """
     Handles generation requests.
@@ -212,7 +223,7 @@ async def generate(
             personality_manager=personality_manager,
             binding_manager=binding_manager,
             function_manager=function_manager,
-            resource_manager=resource_manager, # <-- ENSURE THIS IS PASSED
+            resource_manager=resource_manager,
             config=config
         )
 
@@ -243,4 +254,4 @@ async def generate(
     except Exception as e:
         # Catch unexpected errors during the endpoint handling itself
         logger.error(f"Unhandled exception in /generate endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected internal server error occurred.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected internal server error occurred.")

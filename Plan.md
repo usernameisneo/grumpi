@@ -48,7 +48,7 @@ lollms_server/
 ├── Plan.md              # This file
 ├── README.md
 ├── config.toml.example  # Example configuration
-├── examples/            # Example implementations
+├── zoos/            # Example implementations
 │   ├── bindings/
 │   ├── functions/
 │   └── personalities/
@@ -113,7 +113,7 @@ lollms_server/
 ### Phase 5: Binding Implementations & Examples
 
 *   [x] Create example `DummyBinding` (TTT, TTI) for testing.
-*   [x] Implement wrappers/examples for key bindings (start with OpenAI, Ollama, maybe a placeholder for llamacpp/HF). Place these in `examples/bindings/`.
+*   [x] Implement wrappers/examples for key bindings (start with OpenAI, Ollama, maybe a placeholder for llamacpp/HF). Place these in `zoos/bindings/`.
 *   [x] Refine the `generate` endpoint to handle different modalities and base64 encoding.
 *   [x] Implement TTT streaming using `StreamingResponse`.
 
@@ -122,7 +122,7 @@ lollms_server/
 *   [x] Refine `PersonalityManager` to differentiate between scripted (`run_workflow`) and non-scripted personalities.
 *   [x] Update `core/generation.py` to execute `run_workflow` for scripted personalities.
 *   [x] Integrate function execution into the generation flow if functions are specified.
-*   [x] Add example personalities and functions in `examples/`.
+*   [x] Add example personalities and functions in `zoos/`.
 
 ### Phase 7: Testing, Documentation & Refinement
 
