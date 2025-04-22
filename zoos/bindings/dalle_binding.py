@@ -70,6 +70,19 @@ class DallEBinding(Binding):
         self.default_quality = self.config.get("default_quality", "standard")
         self.default_style = self.config.get("default_style", "vivid") # Only applies to DALL-E 3
 
+    # --- IMPLEMENTED CAPABILITIES ---
+    def get_supported_input_modalities(self) -> List[str]:
+        """Returns supported input types (text, potentially image)."""
+        modalities = ['text']
+        # Check vision support based on the *currently loaded* model
+        if self.model_supports_vision: modalities.append('image')
+        return modalities
+
+    def get_supported_output_modalities(self) -> List[str]:
+        """Returns supported output types."""
+        return ['image'] # Gemini chat models output text
+    # --- END IMPLEMENTED CAPABILITIES ---
+
     @classmethod
     def get_binding_config(cls) -> Dict[str, Any]:
         """Returns metadata about the DALL-E binding."""

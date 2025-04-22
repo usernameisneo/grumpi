@@ -6,6 +6,7 @@ python-dotenv>=1.0.0 # Good practice for managing env vars like API keys if need
 aiofiles>=23.1.0 # For async file operations if needed
 pyyaml>=6.0 # For reading personality config.yaml
 pipmaster
+ascii_colors
 # Optional, example binding dependencies (add as needed, or instruct users)
 # openai>=1.0.0
 # ollama>=0.1.7
