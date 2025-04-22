@@ -172,7 +172,8 @@ class DallEBinding(Binding):
         self,
         prompt: str,
         params: Dict[str, Any],
-        request_info: Dict[str, Any] # Contains personality, generation_type ('tti') etc.
+        request_info: Dict[str, Any], # Contains personality, generation_type ('tti') etc.
+        multimodal_data: Optional[List['InputData']] = None # Use forward reference for type hint
     ) -> Union[str, Dict[str, Any]]:
         """Generates an image using the DALL-E API."""
         if not self._model_loaded or not self.model_name:

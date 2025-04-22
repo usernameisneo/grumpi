@@ -178,3 +178,5 @@ config.toml
 generated_images
 chat_history.json
 settings.json
+bot_config.json
+discord_settings.json
