@@ -48,7 +48,7 @@ dev = [
     "httpx>=0.23.0",         # Async HTTP client for testing API
     "pytest-mock>=3.5.0",    # Fixture for easy mocking
     "black",                 # Code formatter
-    "ruff"                   # Linter
+    "ruff",                   # Linter
 
     # Documentation generation
     "sphinx>=4.0",            # Core Sphinx package

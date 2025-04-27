@@ -213,7 +213,7 @@ class GeminiBinding(Binding):
         content_payload = await self._process_content(prompt, multimodal_data)
         loaded_images = [part for part in content_payload if isinstance(part, Image.Image)] if isinstance(content_payload, list) else []
         try:
-            response = await self.model.generate_content( content_payload, generation_config=generation_config, stream=False, safety_settings=self.safety_settings )
+            response = self.model.generate_content( content_payload, generation_config=generation_config, stream=False, safety_settings=self.safety_settings )
             if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
                 reason = response.prompt_feedback.block_reason.name; logger.error(f"Generation blocked (prompt safety): {reason}"); raise ValueError(f"Blocked (prompt safety): {reason}")
             if not response.candidates or not hasattr(response.candidates[0], 'content') or not hasattr(response.candidates[0].content, 'parts'):
@@ -244,7 +244,7 @@ class GeminiBinding(Binding):
         loaded_images = [part for part in content_payload if isinstance(part, Image.Image)] if isinstance(content_payload, list) else []
         full_response_content = ""; stream = None; block_reason = None; finish_reason_str = None
         try:
-            stream = await self.model.generate_content( content_payload, generation_config=generation_config, stream=True, safety_settings=self.safety_settings )
+            stream = self.model.generate_content( content_payload, generation_config=generation_config, stream=True, safety_settings=self.safety_settings )
             async for chunk in stream:
                 if hasattr(chunk, 'prompt_feedback') and chunk.prompt_feedback.block_reason:
                     block_reason = chunk.prompt_feedback.block_reason.name; logger.error(f"Blocked (prompt safety): {block_reason}"); yield {"type": "error", "content": f"Blocked (prompt safety): {block_reason}"}; break
@@ -279,7 +279,7 @@ class GeminiBinding(Binding):
         raise NotImplementedError("Gemini binding does not support direct tokenization.")
         # If we just wanted the count:
         # try:
-        #     response = await self.model.count_tokens(text)
+        #     response = self.model.count_tokens(text)
         #     return response.total_tokens # Incorrect return type!
         # except Exception as e:
         #     logger.error(f"Error counting tokens: {e}", exc_info=True)

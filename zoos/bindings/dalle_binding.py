@@ -75,7 +75,7 @@ class DallEBinding(Binding):
         """Returns supported input types (text, potentially image)."""
         modalities = ['text']
         # Check vision support based on the *currently loaded* model
-        if self.model_supports_vision: modalities.append('image')
+        #if self.model_supports_vision: modalities.append('image')
         return modalities
 
     def get_supported_output_modalities(self) -> List[str]:
@@ -269,10 +269,75 @@ class DallEBinding(Binding):
         self,
         prompt: str,
         params: Dict[str, Any],
-        request_info: Dict[str, Any]
+        request_info: Dict[str, Any],
+        multimodal_data: Optional[List['InputData']] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Streaming is not supported for DALL-E image generation."""
-        logger.error(f"DALL-E Binding '{self.binding_name}': generate_stream called, but not supported.")
-        raise NotImplementedError("DALL-E binding does not support streaming generation.")
-        # Need this yield to make it a generator, even though it shouldn't be reached
-        yield {} # pragma: no cover
+        """
+        Simulates streaming for DALL-E image generation.
+        Yields an 'info' chunk, then calls non-streaming 'generate' and yields
+        a 'final' chunk containing the image data in the List[OutputData] format.
+        """
+        logger.info(f"DALL-E Binding '{self.binding_name}': Simulating stream for image generation.")
+        # Yield an initial info message
+        yield {"type": "info", "content": {"status": "starting_image_generation", "model": self.model_name, "prompt": prompt}}
+
+        try:
+            # Call the non-streaming method to get the result
+            image_result_dict = await self.generate(
+                prompt=prompt,
+                params=params,
+                request_info=request_info,
+                multimodal_data=multimodal_data # Pass along multimodal data if needed by generate
+            )
+
+            # Check if generate returned the expected dict format
+            if isinstance(image_result_dict, dict) and "image_base64" in image_result_dict:
+                # Construct the OutputData structure for the final chunk
+                final_output_list = [
+                    {
+                        "type": "image",
+                        "data": image_result_dict["image_base64"],
+                        "mime_type": image_result_dict.get("mime_type", "image/png"),
+                        "metadata": image_result_dict.get("metadata", {})
+                    }
+                ]
+                # Yield the final chunk containing the List[OutputData]-like structure
+                yield {"type": "final", "content": final_output_list, "metadata": {"status": "success"}}
+                logger.info(f"DALL-E Binding '{self.binding_name}': Simulated stream finished successfully.")
+
+            elif isinstance(image_result_dict, dict) and "error" in image_result_dict: # Handle if generate itself returned an error dict
+                 yield {"type": "error", "content": image_result_dict["error"]}
+                 yield {"type": "final", "content": [{"type": "error", "data": image_result_dict["error"]}], "metadata": {"status": "failed"}}
+            else: # Handle unexpected return type from generate
+                 raise TypeError(f"generate() returned unexpected type: {type(image_result_dict)}")
+
+        except (ValueError, RuntimeError, OpenAIError, Exception) as e:
+            logger.error(f"DALL-E Binding '{self.binding_name}': Error during simulated stream's generate call: {e}", exc_info=True)
+            yield {"type": "error", "content": f"Image generation failed: {str(e)}"}
+            # Yield a final chunk indicating failure
+            yield {"type": "final", "content": [{"type": "error", "data": f"Image generation failed: {str(e)}"}], "metadata": {"status": "failed"}}
+
+
+    async def get_current_model_info(self) -> Dict[str, Any]:
+        """Returns information about the currently loaded DALL-E model."""
+        if not self._model_loaded or not self.model_name:
+            return { # Return empty-like structure if not loaded
+                "name": None, "context_size": None, "max_output_tokens": None,
+                "supports_vision": False, "supports_audio": False, "details": {}
+            }
+
+        model_details = DALLE_MODELS.get(self.model_name, {})
+        return {
+            "name": self.model_name,
+            "context_size": None, # Not applicable for DALL-E
+            "max_output_tokens": None, # Not applicable
+            "supports_vision": True, # DALL-E models are inherently vision output
+            "supports_audio": False,
+            "details": {
+                "info": f"OpenAI DALL-E model ({self.model_name})",
+                "supported_sizes": model_details.get("sizes"),
+                "supported_qualities": model_details.get("qualities"),
+                "supported_styles": model_details.get("styles"),
+                "max_images_per_request": model_details.get("max_n")
+            }
+        }

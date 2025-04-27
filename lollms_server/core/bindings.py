@@ -255,41 +255,22 @@ class Binding(ABC):
         return
 
     # --- NEW: Tokenization / Detokenization / Info Methods ---
-    @abstractmethod
     async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
         """
         Tokenizes the given text using the currently loaded model's tokenizer.
-
-        Args:
-            text: The text to tokenize.
-            add_bos: Whether to add the beginning-of-sentence token.
-            add_eos: Whether to add the end-of-sentence token.
-
-        Returns:
-            A list of token IDs.
-
-        Raises:
-            RuntimeError: If no model is loaded or tokenization fails.
-            NotImplementedError: If the binding does not support tokenization.
+        (Optional: Bindings should implement this if they support tokenization).
         """
-        pass
+        logger.warning(f"Tokenization requested but not implemented for binding type '{self.binding_type_name}'.")
+        raise NotImplementedError(f"Binding type '{self.binding_type_name}' does not support tokenization.")
 
-    @abstractmethod
+    # @abstractmethod # REMOVED
     async def detokenize(self, tokens: List[int]) -> str:
         """
         Detokenizes a list of token IDs back into text using the currently loaded model.
-
-        Args:
-            tokens: The list of token IDs.
-
-        Returns:
-            The detokenized text string.
-
-        Raises:
-            RuntimeError: If no model is loaded or detokenization fails.
-            NotImplementedError: If the binding does not support detokenization.
+        (Optional: Bindings should implement this if they support detokenization).
         """
-        pass
+        logger.warning(f"Detokenization requested but not implemented for binding type '{self.binding_type_name}'.")
+        raise NotImplementedError(f"Binding type '{self.binding_type_name}' does not support detokenization.")
 
     @abstractmethod
     async def get_current_model_info(self) -> Dict[str, Any]:

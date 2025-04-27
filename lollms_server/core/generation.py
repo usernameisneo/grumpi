@@ -111,6 +111,7 @@ async def process_generation_request(
     Processes a generation request, handling personality logic, binding selection,
     parameter merging, resource management, multimodal input placeholders, and generation execution.
     """
+    logger.debug(f"--- Start process_generation_request --- Request Type: {request.generation_type}") # Log request type start
     start_time = time.time()
     personality: Optional[Personality] = None
 
@@ -128,7 +129,7 @@ async def process_generation_request(
     multimodal_data_for_binding: List[InputData] = [
         item for item in input_data if item.type != 'text'
     ]
-    logger.debug(f"Extracted primary text prompt: '{primary_text_prompt[:100]}...'")
+    logger.debug(f"Primary text prompt: '{primary_text_prompt[:100]}...'")    
     if multimodal_data_for_binding:
          logger.info(f"Found {len(multimodal_data_for_binding)} multimodal input items: {[f'{item.type}/{item.role}' for item in multimodal_data_for_binding]}")
     # --- End Input Extraction ---
@@ -146,21 +147,36 @@ async def process_generation_request(
 
     # 2. Determine Binding and Model
     binding_name, model_name = _determine_binding_and_model(request, personality, config)
+    logger.debug(f"After _determine_binding_and_model: binding_name='{binding_name}', model_name='{model_name}'")
     if not binding_name: # Model name can be optional for some bindings
          raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not determine binding for the request.")
 
     # 3. Get Binding Instance
-    binding = binding_manager.get_binding(binding_name)
-    if not binding:
-        logger.error(f"Binding instance '{binding_name}' not found or failed to instantiate.")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Binding '{binding_name}' not available.")
+    try:
+        logger.debug(f"Attempting to get binding instance for name: '{binding_name}'")
+        binding = binding_manager.get_binding(binding_name) # Assign here
 
+        if not binding:
+            # Log the error clearly if binding is None after the call
+            logger.error(f"Binding instance '{binding_name}' not found or failed to instantiate (returned None).")
+            # Raise the exception to stop execution
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Binding '{binding_name}' not available or failed to load.")
+
+        # If we reach here, binding is not None
+        logger.debug(f"Successfully retrieved binding instance: Type='{type(binding).__name__}', Configured Name='{binding.binding_name}'")
+
+    except HTTPException: # Re-raise HTTP exceptions directly
+        raise
+    except Exception as e:
+        # Catch potential errors *during* get_binding call itself
+        logger.error(f"Unexpected error retrieving binding '{binding_name}': {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve binding '{binding_name}': {e}") from e
     # --- Phase 6 Placeholder: Check Binding Capabilities ---
-    # logger.info(f"Binding '{binding_name}' supports inputs: {binding.get_supported_input_modalities()}")
-    # logger.info(f"Binding '{binding_name}' supports outputs: {binding.get_supported_output_modalities()}")
-    # for item in multimodal_data_for_binding:
-    #     if not binding.supports_input_role(item.type, item.role):
-    #          raise HTTPException(status_code=400, detail=f"Binding '{binding_name}' does not support input type '{item.type}' with role '{item.role}'")
+    logger.info(f"Binding '{binding_name}' supports inputs: {binding.get_supported_input_modalities()}")
+    logger.info(f"Binding '{binding_name}' supports outputs: {binding.get_supported_output_modalities()}")
+    for item in multimodal_data_for_binding:
+        if not binding.supports_input_role(item.type, item.role):
+            raise HTTPException(status_code=400, detail=f"Binding '{binding_name}' does not support input type '{item.type}' with role '{item.role}'")
     # --- End Placeholder ---
 
     # 4. Prepare Generation Parameters
@@ -210,11 +226,12 @@ async def process_generation_request(
         output: Optional[Union[str, Dict[str, Any], List[Dict[str, Any]]]] = None # Holds the raw result for non-streaming
 
         effective_model_name = model_name or binding.model_name or "binding_default" # Ensure a name for context manager
-
+        logger.debug(f"Entering manage_model_loading for Binding='{binding.binding_name}', effective_model_name='{effective_model_name}'")
         async with manage_model_loading(binding, effective_model_name):
+            logger.debug(f"Inside manage_model_loading context. Binding: {binding.binding_name}, Model loaded: {binding.is_model_loaded}, Loaded Name: {binding.model_name}")
             if is_scripted_request:
                 logger.info(f"Executing scripted workflow: '{personality.name}'")
-                script_output = await personality.run_workflow( primary_text_prompt=primary_text_prompt, params=merged_params, context=generation_context )
+                script_output = await personality.run_workflow( prompt=primary_text_prompt, params=merged_params, context=generation_context )
 
                 # --- Handle Streaming Response from Script ---
                 if request.stream and isinstance(script_output, AsyncGenerator):
@@ -258,6 +275,7 @@ async def process_generation_request(
                 logger.info(f"Executing direct generation: Binding='{binding_name}', Type='{request.generation_type}'")
                 if request.stream:
                      logger.info("Starting stream generation via binding...")
+                     logger.debug(f"primary_text_prompt: {primary_text_prompt}")
                      binding_stream_generator = binding.generate_stream( prompt=primary_text_prompt, params=merged_params, request_info=request_info, multimodal_data=multimodal_data_for_binding )
                      async def binding_event_stream():
                          final_stream_content: List[Dict] = [] # Accumulate for final message
@@ -340,23 +358,44 @@ async def process_generation_request(
 
 # --- _determine_binding_and_model (unchanged for now) ---
 def _determine_binding_and_model(request: GenerateRequest, personality: Optional[Personality], config: AppConfig) -> Tuple[Optional[str], Optional[str]]:
-    gen_type = request.generation_type
+    """Determines the binding and model name based on request, personality, and defaults for the specific generation type."""
+    gen_type = request.generation_type # e.g., 'ttt', 'tti'
     binding_name = request.binding_name
     model_name = request.model_name
 
-    if not binding_name:
-        binding_name = getattr(config.defaults, f"{gen_type}_binding", None)
-        logger.debug(f"Using default binding '{binding_name}' for type '{gen_type}'")
-    if not model_name:
-        model_name = getattr(config.defaults, f"{gen_type}_model", None)
-        logger.debug(f"Using default model '{model_name}' for type '{gen_type}'")
+    logger.debug(f"Determining binding/model for gen_type='{gen_type}'. Request values: binding='{binding_name}', model='{model_name}'.")
 
+    # --- Personality Overrides (Placeholder - Implement if needed) ---
+    # if personality:
+    #     # Check if personality config specifies a binding/model for this gen_type
+    #     # Example: binding_name = binding_name or personality.config.get_binding_for_type(gen_type)
+    #     # Example: model_name = model_name or personality.config.get_model_for_type(gen_type)
+    #     pass # Add specific logic here if personalities store type-specific preferences
+
+    # --- Fallback to Global Defaults for the *specific* generation type ---
+    if not binding_name:
+        # Correctly get the default binding for the requested type (ttt_binding, tti_binding, etc.)
+        default_binding_attr = f"{gen_type}_binding"
+        binding_name = getattr(config.defaults, default_binding_attr, None)
+        if binding_name:
+            logger.debug(f"Using default binding '{binding_name}' for type '{gen_type}' from config.defaults.{default_binding_attr}")
+        else:
+            logger.warning(f"No binding specified in request and no default '{default_binding_attr}' found in config.")
+
+    if not model_name:
+        # Correctly get the default model for the requested type (ttt_model, tti_model, etc.)
+        default_model_attr = f"{gen_type}_model"
+        model_name = getattr(config.defaults, default_model_attr, None)
+        if model_name:
+            logger.debug(f"Using default model '{model_name}' for type '{gen_type}' from config.defaults.{default_model_attr}")
+        else:
+            # Allow model_name to be None, binding might have an internal default
+            logger.debug(f"No model specified in request and no default '{default_model_attr}' found. Binding must handle.")
+
+    # Final check - we need at least a binding name
     if not binding_name:
         logger.error(f"Could not determine a binding for generation type '{gen_type}'. Please specify in request or configure defaults.")
-        return None, None
-    # Allow model_name to be None, binding might have a default
-    if not model_name:
-        logger.info(f"No specific model determined for type '{gen_type}'. Binding '{binding_name}' might use its internal default.")
+        return None, None # Return None, None to indicate failure
 
     logger.info(f"Selected for generation: Type='{gen_type}', Binding='{binding_name}', Model='{model_name or 'Binding Default'}'")
     return binding_name, model_name
