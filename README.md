@@ -14,22 +14,31 @@
 
 **Warning:** This project is currently in **Alpha**. Expect potential bugs, breaking changes, and incomplete features. Use with caution, especially features involving code execution.
 
-`lollms_server` is a versatile, asynchronous, multi-modal generation server designed to work with the [LOLLMS](https://github.com/ParisNeo/lollms) ecosystem. It provides a unified API endpoint (`/generate`) to interact with various text, image, video, and music generation backends (bindings) using configurable personalities and optional function execution.
+`lollms_server` is a versatile, asynchronous, multi-modal generation server designed to work with the [LOLLMS](https://github.com/ParisNeo/lollms) ecosystem. It provides a unified API endpoint (`/generate`) to interact with various text, image, audio, video, and music generation backends (bindings) using configurable personalities and optional function execution. It aims to provide a robust and extensible platform for experimenting with and deploying multi-modal AI workflows.
 
-## Features
+## Key Features
 
-*   **Multi-Modal Generation:** Supports Text-to-Text (TTT), Text-to-Image (TTI), Text-to-Video (TTV), Text-to-Music (TTM) through extensible bindings.
-*   **Binding Agnostic:** Works with various backends like Ollama, OpenAI (including compatible APIs like Groq), DALL-E, Hugging Face Transformers, llama-cpp-python, vLLM, etc. Users can add their own bindings easily.
-*   **LOLLMS Personality System:** Loads and utilizes standard LOLLMS personalities (both configuration-based and scripted `workflow.py` types).
-*   **Asynchronous & Concurrent:** Built with FastAPI and `asyncio` for high throughput and responsiveness. Handles multiple requests concurrently.
-*   **Resource Management:** Implements basic resource management (GPU semaphore) to prevent overloading during model loading. Requests are queued if resources are unavailable.
+*   **Multi-Modal Generation:** Supports Text-to-Text (TTT), Text-to-Image (TTI), Text-to-Video (TTV), Text-to-Music (TTM), Text-to-Speech (TTS), Speech-to-Text (STT), Image-to-Image (I2I), Audio-to-Audio, and more through extensible bindings.
+*   **Binding Agnostic:** Easily integrate different AI backends (local or remote APIs) like Ollama, OpenAI (including compatible APIs like Groq, Together.ai), DALL-E, Gemini, llama-cpp-python, Hugging Face Transformers, etc.
+*   **LOLLMS Personality System:** Loads and utilizes standard LOLLMS personalities, including configuration-based prompts (`config.yaml`) and scripted workflows (`workflow.py`).
+*   **Multimodal Input API:** Accepts complex inputs via the `/generate` endpoint's `input_data` list, allowing combinations of text, images, audio, etc., each with assigned roles (e.g., `user_prompt`, `input_image`, `controlnet_image`).
+*   **Asynchronous & Concurrent:** Built with FastAPI and `asyncio` for high throughput and responsiveness, handling multiple requests concurrently.
+*   **Resource Management:** Implements basic resource management (GPU semaphore) to prevent overloading during model loading or intensive generation tasks. Requests are queued if resources are unavailable.
 *   **Configuration Driven:** Server settings, paths, default models/bindings, security keys, logging levels, UI options, and personality configurations are managed via a central `config.toml` file.
-*   **Dynamic Discovery:** Automatically discovers personalities, bindings, and functions placed in user-configured folders.
-*   **Secure API:** Uses API key authentication for endpoints.
-*   **Extensible Function Calling:** Supports adding custom Python functions that can be called during generation workflows (primarily within scripted personalities).
-*   **Streaming Support:** Provides Server-Sent Events (SSE) for real-time streaming of Text-to-Text (TTT) responses.
-*   **(Optional) Integrated Web UI:** Includes a basic Vue.js frontend served directly by FastAPI for easy interaction (configurable).
+*   **Dynamic Discovery:** Automatically discovers personalities, bindings, and functions placed in user-configured folders upon startup.
+*   **Secure API:** Uses API key authentication (`X-API-Key` header) for all API endpoints.
+*   **Streaming Support:** Provides Server-Sent Events (SSE) for real-time streaming of Text-to-Text (TTT) and potentially other compatible modalities.
+*   **Extensible Function Calling:** Allows defining custom Python functions that can be discovered and executed within scripted personality workflows.
+*   **(Optional) Integrated Web UI:** Includes a basic Vue.js frontend served directly by FastAPI for easy interaction and testing (configurable).
 *   **Cross-Platform:** Includes installation scripts for Linux, macOS, and Windows.
+
+## Core Concepts
+
+*   **Binding:** A Python class that interfaces with a specific AI model backend (e.g., OpenAI API, local Ollama server, `llama-cpp-python`). Bindings handle model loading, parameter translation, generation calls, and capability reporting. You configure *instances* of bindings in `config.toml`.
+*   **Personality:** Defines the behavior, instructions, and context for the AI, similar to custom GPTs or system prompts. They consist of a `config.yaml` file and optional assets or scripts. Scripted personalities (`workflow.py`) allow for complex, agentic behavior.
+*   **Function:** A custom Python function placed in the functions folder, discoverable by the server and callable from scripted personalities to extend capabilities (e.g., calling external tools, performing calculations).
+*   **Multimodal Input (`input_data`):** The `/generate` endpoint accepts a list of input objects, each specifying its `type` (text, image, audio, etc.), `role` (how it should be used, e.g., `user_prompt`, `input_image`, `mask_image`), and the actual `data` (text content, base64 string, URL).
+*   **API Key:** A secret key required to authenticate requests to the server's API endpoints. Defined in `config.toml`.
 
 ## Installation
 
@@ -40,7 +49,10 @@ Follow these steps to install `lollms_server`.
 *   **Python:** Version **3.9 or higher** is required. Ensure it's added to your system's PATH. Download from [python.org](https://www.python.org/).
 *   **pip:** Python's package installer, usually included with Python.
 *   **Git:** Required to clone the repository. Install from [git-scm.com](https://git-scm.com/).
-*   **(Optional) Backend Servers:** If using bindings like Ollama, ensure the respective server is installed and running separately ([ollama.com](https://ollama.com/)).
+*   **(Optional) Backend Servers/Libraries:** Depending on the bindings you intend to use, you might need:
+    *   Ollama server running ([ollama.com](https://ollama.com/))
+    *   Specific Python libraries for local models (e.g., `llama-cpp-python`, `transformers`, `torch`, `diffusers`)
+    *   API keys for remote services (OpenAI, Gemini, etc.)
 
 ### Installation Steps
 
@@ -64,28 +76,34 @@ Follow these steps to install `lollms_server`.
 
     This script will:
     *   Check your Python version.
-    *   Create a virtual environment named `venv`.
-    *   Install core Python packages from `requirements.txt` into `venv`.
+    *   Create a Python virtual environment named `venv`.
+    *   Install core Python packages (`fastapi`, `uvicorn`, `pydantic`, `toml`, `pyyaml`, `pipmaster`, `ascii_colors`) from `requirements.txt` into `venv`.
     *   Copy `config.toml.example` to `config.toml` if it doesn't exist.
 
 3.  **Activate the Virtual Environment:**
     *   **Linux/macOS:** `source venv/bin/activate`
-    *   **Windows Cmd:** `venv\Scripts\activate`
+    *   **Windows Cmd:** `venv\Scripts\activate.bat`
     *   **Windows PowerShell:** `.\venv\Scripts\Activate.ps1` (You might need to adjust execution policy: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process`)
-    You should see `(venv)` at the beginning of your terminal prompt. **All subsequent commands (pip installs, running the server) should be done with the environment active.**
+
+    You should see `(venv)` at the beginning of your terminal prompt. **All subsequent commands (pip installs, running the server) must be done with the environment active.**
 
 4.  **Configure `config.toml`:**
-    *   **This is the most important step!** Open `config.toml` in a text editor. Review `config.toml.example` for detailed comments on all options. See the "Server Configuration" section below for more details.
-    *   **Crucially:** Set your API keys in `[security]` and configure your desired generation backends in `[bindings]`.
+    *   **This is the most important step!** Open `config.toml` in a text editor. Review `config.toml.example` for detailed comments on all options. See the "Server Configuration" section below for key areas.
+    *   **API Keys:** Add at least one strong, random key to `[security].allowed_api_keys`.
+    *   **Bindings:** Configure instances under `[bindings]` for the AI backends you want to use (e.g., `[bindings.default_ollama]`, `[bindings.my_openai]`). Set the correct `type` and any required parameters like API keys or hosts.
+    *   **Paths:** Verify the `[paths]` section points to the correct locations for your models, personalities, etc.
 
 5.  **(Optional) Install Binding-Specific Dependencies:**
-    Install Python packages required by the specific bindings you configured in `config.toml`. Ensure `venv` is active.
+    Install Python packages required by the specific bindings you enabled in `config.toml`. Ensure `venv` is active. Check the `requirements` list within each binding's `get_binding_config()` method (visible via `/docs` or in the source code).
     ```bash
     # Example: Install packages for the included example bindings
-    pip install ollama openai pillow
+    (venv) pip install ollama openai pillow google-generativeai requests llama-cpp-python
+
+    # Example: If using a transformers-based binding (check its requirements)
+    # (venv) pip install transformers torch accelerate
 
     # Example: If using the python_builder_executor personality
-    # pip install pygame numpy # Or other libraries the generated code might need
+    # (venv) pip install pygame numpy # Or other libraries the generated code might need
     ```
 
 ## Running the Server
@@ -94,219 +112,260 @@ Follow these steps to install `lollms_server`.
 2.  **Run using Script:**
     *   **Linux/macOS:** `./run.sh`
     *   **Windows:** `.\run.bat`
+    These scripts attempt to read the host/port from `config.toml` and run `uvicorn`.
 3.  **Run Manually (Alternative):**
     ```bash
     # Reads host/port/log-level from config.toml via main.py's logic
-    python lollms_server/main.py
+    (venv) python lollms_server/main.py
+    ```
+    Or directly with Uvicorn:
+    ```bash
+    # Replace host/port if different from config defaults
+    (venv) uvicorn lollms_server.main:app --host 0.0.0.0 --port 9600 --workers 1
     ```
 4.  **Access:**
-    *   **API Docs (Swagger):** `http://localhost:9600/docs` (or your configured host/port)
+    *   **API Docs (Swagger):** `http://localhost:9600/docs` (or your configured host/port). Use the "Authorize" button here to test endpoints with your API key.
     *   **Web UI (if enabled):** `http://localhost:9600`
 
 ## Server Configuration (`config.toml`)
 
-The `config.toml` file controls server behavior, paths, security, defaults, and component configurations.
+The `config.toml` file controls server behavior. Review `config.toml.example` for comments.
 
-*   **`[server]`**
-    *   `host`: IP address to bind (e.g., `"0.0.0.0"`, `"127.0.0.1"`). Default: `"0.0.0.0"`.
-    *   `port`: Port number. Default: `9600`.
-    *   `allowed_origins`: List of origins for CORS (Cross-Origin Resource Sharing). Needed for web UIs accessing the API from different domains/ports. Default includes common local development ports and `"null"` (for `file://` access - use cautiously). Example: `["http://localhost:5173", "https://my-app.com"]`. Use `["*"]` to allow all (less secure).
-
-*   **`[paths]`**
-    *   Specifies directories for discovering custom components. Paths are relative to the `config.toml` location unless absolute.
-    *   `personalities_folder`: Location of your custom personalities (e.g., `"personal_personalities/"`).
-    *   `bindings_folder`: Location of your custom bindings (e.g., `"personal_bindings/"`).
-    *   `functions_folder`: Location of your custom functions (e.g., `"personal_functions/"`).
-    *   `models_folder`: Base directory for local models used by some bindings (e.g., `"models/"`). Bindings may expect subfolders like `ttt`, `tti`.
-    *   `example_*_folder`: Points to the built-in examples (e.g., `"zoos/personalities/"`).
-
-*   **`[security]`**
-    *   `allowed_api_keys`: **Required.** List of secret keys clients must provide in the `X-API-Key` header. Generate strong random keys. Example: `["your-secret-key-1", "another-secure-key"]`.
-
-*   **`[defaults]`**
-    *   Specifies fallback binding instances and models if not provided in the API request. The `*_binding` value must match an instance name defined under `[bindings]`.
-    *   `ttt_binding`, `ttt_model`: For Text-to-Text.
-    *   `tti_binding`, `tti_model`: For Text-to-Image.
-    *   `ttv_binding`, `ttv_model`: For Text-to-Video.
-    *   `ttm_binding`, `ttm_model`: For Text-to-Music.
-    *   `default_context_size`: Default context window size (informational, used if not specified elsewhere).
-    *   `default_max_output_tokens`: Default maximum generation length (maps to `max_tokens`).
-
-*   **`[webui]` (Optional)**
-    *   `enable_ui`: `true` (default) or `false`. If `true`, the server attempts to serve static files from `webui/dist/`. Requires building the UI (`cd webui && npm run build`).
-
-*   **`[logging]` (Optional)**
-    *   `log_level`: Sets the logging verbosity. Options: `"DEBUG"`, `"INFO"` (default), `"WARNING"`, `"ERROR"`, `"CRITICAL"`. `DEBUG` is very verbose.
-
-*   **`[bindings]`**
-    *   Defines named instances of specific binding types. You **must** configure instances for the bindings you want to use.
-    *   **`[bindings.INSTANCE_NAME]`**: Replace `INSTANCE_NAME` with a unique identifier (e.g., `local_ollama`, `openai_gpt4o`, `dalle3_standard`).
-    *   **`type = "binding_type_name"`**: **Required.** Must match the `type_name` returned by the binding's `get_binding_config()` (usually the Python filename stem, e.g., `ollama_binding`, `openai_binding`, `dalle_binding`).
-    *   **Other Keys:** Parameters specific to the binding `type`. Examples:
-        *   For `ollama_binding`: `host = "http://localhost:11434"`
-        *   For `openai_binding`: `api_key = "sk-..."`, `base_url = "..."` (optional)
-        *   For `dalle_binding`: `api_key = "sk-..."`, `model = "dall-e-3"` (optional default)
-
-*   **`[personalities_config]` (Optional)**
-    *   Override settings for specific personalities discovered in the `paths`. If a personality folder exists but isn't listed here, default settings apply (`enabled = true`, `max_execution_retries = 1`).
-    *   **`[personalities_config.FOLDER_NAME]`**: Key must match the personality's directory name (e.g., `python_builder_executor`, `my_rag_bot`).
-    *   `enabled = true | false`: Set to `false` to prevent this personality from being loaded.
-    *   `max_execution_retries = int`: Max retries for scripted execution workflows (default 1).
-
-*   **`[resource_manager]`**
-    *   `gpu_strategy`: `"semaphore"` (limit N concurrent GPU tasks) or `"simple_lock"` (limit 1). Controls access for bindings that request GPU resources via the manager.
-    *   `gpu_limit`: Max concurrent tasks if using `semaphore`.
-    *   `queue_timeout`: Seconds to wait for a resource before failing the request.
+*   **`[server]`**: `host`, `port`, `allowed_origins` (for CORS, crucial for web UIs).
+*   **`[paths]`**: Directories for discovering `personalities`, `bindings`, `functions`, `models`, and the built-in `examples`. Paths are relative to `config.toml` unless absolute.
+*   **`[security]`**: **`allowed_api_keys`**: **Required list** of secret keys clients must send in the `X-API-Key` header.
+*   **`[defaults]`**: Fallback `ttt_binding`, `ttt_model`, `tti_binding`, etc., if not specified in API requests. Values must match instance names defined in `[bindings]`. Also includes `default_context_size` and `default_max_output_tokens`.
+*   **`[webui]` (Optional)**: `enable_ui = true` to serve the static Vue.js app from `webui/dist/`. Requires building the UI first.
+*   **`[logging]` (Optional)**: `log_level` ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
+*   **`[bindings]`**: **Required section** to define instances of bindings.
+    *   **`[bindings.INSTANCE_NAME]`**: Choose a unique name (e.g., `default_ollama`, `openai_gpt4o`, `my_sdxl_api`).
+    *   **`type = "binding_type_name"`**: **Required.** Must match the `binding_type_name` attribute of the Binding class (e.g., `ollama_binding`, `openai_binding`, `dalle_binding`, `llamacpp_binding`).
+    *   **Other Keys:** Parameters specific to that binding `type` (e.g., `host`, `api_key`, `models_folder`, `n_gpu_layers`). Check the binding's documentation or `get_binding_config()`.
+*   **`[personalities_config]` (Optional)**: Override settings for specific personalities by their folder name.
+    *   **`[personalities_config.FOLDER_NAME]`**: Key must match the personality's directory name.
+    *   `enabled = false`: Disable loading this personality.
+    *   `max_execution_retries = int`: Max retries for scripted workflow errors (default 1).
+*   **`[resource_manager]`**: Controls access to limited resources (primarily GPU).
+    *   `gpu_strategy`: `"semaphore"` (limit N concurrent tasks) or `"simple_lock"` (limit 1).
+    *   `gpu_limit`: Max concurrent tasks for `semaphore`.
+    *   `queue_timeout`: Seconds to wait for resource before failing request.
 
 ## API Usage
 
-See `/docs` on your running server for interactive API documentation (Swagger UI).
+Interact with the server via its REST API. Use the Swagger UI at `/docs` for detailed endpoint information and testing.
 
 ### Authentication
 
-Send a valid API key (from `config.toml [security].allowed_api_keys`) in the `X-API-Key` HTTP header for all `/api/v1/*` endpoints.
+All `/api/v1/*` endpoints require authentication. Include a valid API key from your `config.toml` in the `X-API-Key` HTTP header with every request.
 
 ### Key Endpoints
 
-*   **`GET /`**: Basic server info (no key required).
 *   **`GET /api/v1/list_bindings`**: Lists discovered binding types and configured instances.
 *   **`GET /api/v1/list_personalities`**: Lists loaded and enabled personalities.
-*   **`GET /api/v1/list_available_models/{binding_name}`**: Asks a specific binding instance (e.g., `default_ollama`) to list models it can access. Returns detailed model info.
-*   **`POST /api/v1/generate`**: Main endpoint for triggering generation (see request/response details below).
+*   **`GET /api/v1/list_functions`**: Lists discovered custom functions.
+*   **`GET /api/v1/list_available_models/{binding_name}`**: Asks a specific binding instance (e.g., `default_ollama`) to list models it can access. Returns detailed model info including capabilities.
+*   **`GET /api/v1/list_models`**: Lists models found in the configured `models_folder` subdirectories (basic file scan).
+*   **`POST /api/v1/generate`**: The main endpoint for triggering generation tasks.
 
-### `/generate` Endpoint
+### `/generate` Endpoint Details
 
-**Request Body (JSON):**
+This is the core endpoint for all generation types.
+
+**Request Body (`application/json`):**
 
 ```jsonc
 {
-  "personality": "string | null", // Name of loaded personality (or null/omit for none)
-  "prompt": "string",           // REQUIRED: User input prompt
-  "extra_data": "object | null", // Optional: Extra JSON data for context (RAG results, etc.) passed to scripts
-  "binding_name": "string | null", // Optional: Override default binding instance from [defaults] or personality
-  "model_name": "string | null",   // Optional: Override default model name from [defaults] or personality
-  "generation_type": "'ttt'|'tti'|'ttv'|'ttm'", // Optional: Defaults to 'ttt' (Text-to-Text)
-  "stream": "boolean",           // Optional: Defaults to false. Use true for TTT streaming via SSE.
-  "parameters": {                // Optional: Override default/personality params. Passed to binding/script.
-    "max_tokens": "int | null",  // Example: Max generation length (overrides default_max_output_tokens)
-    "temperature": "float | null", // Example: Sampling temperature
-    "system_message": "string | null", // Example: Override personality conditioning
-    // ... other binding-specific parameters (e.g., size, quality for DALL-E) ...
+  // --- Input Specification (Required) ---
+  "input_data": [
+    // List of input items. MUST contain at least one item.
+    {
+      "type": "'text'|'image'|'audio'|'video'|'document'", // Type of data
+      "role": "string", // How this input is used (e.g., 'user_prompt', 'input_image', 'system_context', 'controlnet_image', 'mask_image')
+      "data": "string", // The actual data (text content, base64 encoded string, URL)
+      "mime_type": "string | null", // REQUIRED for binary types (e.g., 'image/png', 'audio/wav')
+      "metadata": "object | null" // Optional additional info (filename, etc.)
+    }
+    // ... potentially more input items ...
+  ],
+  // (Optional) Deprecated field for simple text prompts. Use input_data instead.
+  // "text_prompt": "string | null",
+
+  // --- Generation Control (Optional - Uses defaults if omitted) ---
+  "personality": "string | null", // Name of loaded personality to use
+  "binding_name": "string | null", // Specific binding instance name (from config.toml)
+  "model_name": "string | null",   // Specific model name for the chosen binding
+  "generation_type": "'ttt'|'tti'|'tts'|'stt'|'ttv'|'ttm'|'i2i'|'audio2audio'", // Default: 'ttt'
+  "stream": "boolean",           // Default: false. Use true for streaming (TTT, TTS supported)
+  "parameters": {                // Optional dict passed to binding/script. Overrides defaults/personality params.
+    "max_tokens": "int | null",
+    "temperature": "float | null",
+    "system_message": "string | null", // Override personality conditioning/system context
+    "image_size": "string | null",    // Example: for TTI
+    "controlnet_scale": "float | null" // Example: for ControlNet
+    // ... other binding/model specific parameters ...
   },
-  "functions": "array[string] | null" // Reserved for future function calling features
+  "functions": "array[string] | null" // Reserved for future structured function calling
 }
 ```
 
-**Response:** See "API Usage" section in previous README version for response types (text/plain, text/event-stream, application/json based on type and streaming).
+**Example TTT Request:**
 
-### Client Examples
+```json
+{
+  "input_data": [
+    {"type": "text", "role": "user_prompt", "data": "Explain the concept of recursion simply."}
+  ],
+  "personality": "lollms",
+  "stream": false
+}
+```
 
-See the `client_examples/` directory for Python and basic Web examples demonstrating API usage.
+**Example TTI Request:**
+
+```json
+{
+  "input_data": [
+    {"type": "text", "role": "user_prompt", "data": "Astronaut riding a unicorn on the moon, digital art"}
+  ],
+  "generation_type": "tti",
+  "binding_name": "my_dalle_binding", // Must be configured in config.toml
+  "parameters": { "size": "1024x1024", "quality": "hd" }
+}
+```
+
+**Example Vision (VLM) Request:**
+
+```json
+{
+  "input_data": [
+    {"type": "text", "role": "user_prompt", "data": "What objects are in this image?"},
+    {"type": "image", "role": "input_image", "data": "BASE64_ENCODED_IMAGE_STRING", "mime_type": "image/jpeg"}
+  ],
+  "generation_type": "ttt", // Still TTT as output is text
+  "binding_name": "gemini_vision" // Must be configured & support vision
+}
+```
+
+**Response:**
+
+*   **Non-streaming:** `application/json` containing the result (e.g., `{"output": {"text": "..."}}` for TTT, `{"output": {"image_base64": "...", "mime_type": "..."}}` for TTI).
+*   **Streaming:** `text/event-stream` with Server-Sent Events (SSE). Each event is `data: {"type": "...", "content": ..., "metadata": ...}\n\n`. Types include `chunk`, `info`, `error`, `final`.
 
 ## Extending the Server
 
-`lollms_server` is designed for extension. Add your own components by placing files in the folders defined in `config.toml [paths]`.
+Add your own components by placing Python files/folders in the directories specified in `config.toml [paths]`.
 
 ### Adding Custom Bindings
 
-Provide interfaces to different AI model backends (local or remote APIs).
-
-1.  **Create File:** Add `your_binding_name.py` to the `personal_bindings/` folder.
-2.  **Inherit:** Define a class inheriting from `lollms_server.core.bindings.Binding`.
-    ```python
-    from lollms_server.core.bindings import Binding
-    class MyCustomBinding(Binding):
-        # Required: Unique name used in config.toml 'type' field
-        binding_type_name = "my_custom_binding"
-        # ... implement methods ...
-    ```
-3.  **Implement Abstract Methods:**
-    *   `get_binding_config() -> Dict`: Return metadata (`type_name`, `description`, `requirements` list, `config_template` dict).
-    *   `async load_model(self, model_name: str) -> bool`: Load/prepare the specified model. Use `self.resource_manager` if needed. Idempotent.
-    *   `async unload_model(self) -> bool`: Release model resources. Idempotent.
-    *   `async generate(self, prompt: str, params: Dict, request_info: Dict) -> Union[str, Dict]`: Perform generation. Return `str` for TTT, `dict` for TTI/TTV/TTM (e.g., `{"image_base64": "..."}`). Access instance config via `self.config`.
-    *   `async list_available_models(self) -> List[Dict]`: Return list of models this binding can use. Each dict **must** have a `'name'` key. Populate other standard keys (`size`, `format`, `context_size`, etc.) if possible.
-4.  **(Optional) Implement Streaming:** `async generate_stream(self, ...) -> AsyncGenerator[Dict, None]` for TTT. Yield `StreamChunk`-like dicts.
-5.  **(Optional) Implement Health Check:** `async health_check(self) -> Tuple[bool, str]`.
-6.  **Configure:** Add an instance in `config.toml`:
+1.  **Create File:** Add `your_binding_name.py` to `personal_bindings/`.
+2.  **Inherit & Implement:** Define a class inheriting from `lollms_server.core.bindings.Binding`. Implement required methods:
+    *   `binding_type_name`: Class attribute, unique string identifier (e.g., `"my_api_binding"`). Used in `config.toml`.
+    *   `get_binding_config()`: Class method returning dict with metadata (`type_name`, `description`, `requirements`, `config_template`).
+    *   `get_supported_input_modalities() -> List[str]`: Return list like `['text', 'image']`.
+    *   `get_supported_output_modalities() -> List[str]`: Return list like `['text']` or `['image']`.
+    *   `async list_available_models() -> List[Dict]`: List models usable by this binding instance. Include standard keys (`name`, `size`, `supports_vision`, etc.) and put others in `details`.
+    *   `async load_model(model_name: str) -> bool`: Load/prepare the model. Use `self.resource_manager` for GPU access if needed.
+    *   `async unload_model() -> bool`: Release model resources.
+    *   `async generate(prompt: str, params: Dict, request_info: Dict, multimodal_data: List[InputData]) -> Union[str, Dict]`: Core generation logic. Process `multimodal_data` based on `get_supported_input_modalities`. Return `{"text": "..."}` or `{"image_base64": "...", ...}` etc.
+    *   `(Optional)` `async generate_stream(...) -> AsyncGenerator[Dict, None]`: Implement for streaming. Yield `StreamChunk`-like dicts.
+    *   `(Optional)` `async health_check() -> Tuple[bool, str]`: Check connectivity/status.
+3.  **Configure:** Add an instance in `config.toml`:
     ```toml
     [bindings.my_instance_name]
-    type = "my_custom_binding" # Matches binding_type_name
-    your_specific_config_key = "value"
+    type = "my_api_binding" # Matches binding_type_name
+    api_endpoint = "https://example.com/api"
+    api_secret = "..."
     ```
-7.  **Restart:** The server will discover and instantiate your binding.
+4.  **Dependencies:** Ensure any required libraries are installed in the `venv`.
+5.  **Restart Server:** It will discover and instantiate the binding.
 
 ### Adding Custom Personalities
 
-Define the behavior, instructions, and context for the AI.
-
 **1. Simple Personality (Config-based):**
 
-*   **Create Folder:** Make a new directory in `personal_personalities/` (e.g., `my_poet_persona`).
-*   **Create `config.yaml`:** Add a `config.yaml` file inside the folder. Essential keys:
-    *   `name`: Unique name for the personality (used in API requests).
-    *   `author`: Your name or identifier.
-    *   `version`: Version number/string.
-    *   `personality_description`: Brief description shown in listings.
-    *   `personality_conditioning`: The core system prompt/instructions given to the LLM.
-    *   *(Optional but Recommended):* `category`, `tags`, `welcome_message`, `user_message_prefix`, `ai_message_prefix`, default model parameters (`model_temperature`, `model_n_predicts`, etc.), `dependencies`.
-*   **(Optional) Assets:** Add an `assets/logo.png` (or other assets). Reference the icon in `config.yaml`.
-*   **(Optional) Data:** Add a `data/` folder for RAG databases or other files. These are *not* automatically used; scripted personalities must load them.
-*   **(Optional) Configure:** Add an entry in `config.toml [personalities_config]` if you need to disable it or set specific retries.
-*   **Restart:** The server will discover and load it.
+*   **Create Folder:** E.g., `personal_personalities/my_story_writer`.
+*   **Create `config.yaml`:** Define `name`, `author`, `version`, `personality_description`, `personality_conditioning`, and optional fields (see `zoos/personalities/lollms/config.yaml`).
+*   **(Optional) Add `assets/icon.png`.**
+*   **Restart Server.**
 
 **2. Scripted Personality (Agentic):**
 
-*   **Follow Simple Steps:** Create the folder, `config.yaml` (including essential keys), and optional `assets/`, `data/`.
-*   **Create Script:** Add a `scripts/` subfolder and place your workflow file inside (e.g., `scripts/my_workflow.py`).
-*   **Define `run_workflow`:** In your script file, define the main entry point:
+*   **Follow Simple Steps:** Create folder, `config.yaml`.
+*   **Create Script:** Add `scripts/workflow.py` (or other name) inside the personality folder.
+*   **Define `run_workflow`:** Implement the core logic in the script:
     ```python
-    # scripts/my_workflow.py
-    import asyncio
-    from typing import Any, Dict, Optional
-    # Import binding helpers etc. if needed
+    # scripts/workflow.py
+    import ascii_colors as logging
+    from typing import Any, Dict, Optional, List, Union, AsyncGenerator
+    from lollms_server.utils.helpers import extract_code_blocks
+    from lollms_server.api.models import InputData # Access InputData
 
-    async def run_workflow(prompt: str, params: Dict, context: Dict) -> Any:
-        # Access provided objects:
-        binding = context.get('binding') # The selected Binding instance
-        personality = context.get('personality') # The Personality object itself
-        app_config = context.get('config') # The server's AppConfig
+    async def run_workflow(prompt: str, params: Dict, context: Dict) -> Union[str, Dict, AsyncGenerator[Dict, None]]:
+        # context contains: 'binding', 'personality', 'config', 'function_manager',
+        # 'resource_manager', 'input_data', 'request_info'
+        binding = context.get('binding')
+        input_data: List[InputData] = context.get('input_data', [])
         function_manager = context.get('function_manager')
-        resource_manager = context.get('resource_manager')
-        extra_data = context.get('extra_data') # Data from the API request
+        logger = logging.getLogger(__name__)
+        logger.info(f"Workflow received {len(input_data)} input items.")
 
-        # Use binding helpers for interaction:
-        # is_sure = await binding.ask_yes_no("Are you sure?", params)
-        # code_blocks = await binding.generate_and_extract_all_codes(prompt, params, context)
-        # result = await function_manager.execute_function("module.func", {"arg": ...})
+        # Example: Call binding, call function, process images...
+        # image_items = [item for item in input_data if item.type == 'image']
+        # response = await binding.generate(prompt, params, context['request_info'], input_data)
+        # success, func_result = await function_manager.execute_function("my_module.my_func", {})
 
-        # Perform logic...
-
-        # Return final result (string, dict, or async generator for streaming)
-        return "Workflow completed successfully!"
+        # Return string, dict, or async generator for streaming
+        return f"Workflow executed for: {prompt}"
     ```
-*   **Set `script_path`:** In `config.yaml`, add the line: `script_path: scripts/my_workflow.py` (relative to the personality root).
-*   **(Optional) Configure:** Add entry in `config.toml [personalities_config]` (e.g., `my_agent = { enabled = true, max_execution_retries = 3 }`).
-*   **Restart:** The server finds the personality, loads the script, and will call `run_workflow` when this personality is used in a `/generate` request.
+*   **Set `script_path`:** In `config.yaml`, add `script_path: scripts/workflow.py`.
+*   **(Optional) Configure:** Use `config.toml [personalities_config]` to disable or set retries.
+*   **Restart Server.**
 
 ### Adding Custom Functions
 
-1.  Create a Python file in `personal_functions/` (e.g., `my_utils.py`).
-2.  Define `async` functions (e.g., `async def calculate_something(x: int): ...`).
-3.  Restart server. Functions are discovered as `module_name.function_name` (e.g., `my_utils.calculate_something`).
-4.  Call from scripted personalities:
-    ```python
-    # Inside run_workflow
-    function_manager = context.get('function_manager')
-    if function_manager:
-        success, result = await function_manager.execute_function(
-            "my_utils.calculate_something",
-            {"x": 10}
-        )
-        if success:
-            # Use result
-            pass
+1.  Create `my_functions.py` in `personal_functions/`.
+2.  Define `async def my_async_func(arg1: str, arg2: int) -> dict: ...`.
+3.  Restart server. Function is discovered as `my_functions.my_async_func`.
+4.  Call from scripted personalities using `function_manager.execute_function(...)`.
+
+## Web UI
+
+If `[webui].enable_ui = true` in `config.toml`:
+
+1.  **Build the UI (One-time setup):**
+    ```bash
+    cd webui
+    npm install  # Install dependencies
+    npm run build # Create the 'dist' folder
+    cd ..        # Go back to project root
     ```
+2.  **Run Server:** Start `lollms_server` as usual.
+3.  **Access:** Open your browser to the server's address (e.g., `http://localhost:9600`).
+
+The server will serve the built `index.html` and assets from `webui/dist/`.
+
+## Client Examples
+
+The `client_examples/` directory contains various Python scripts and a basic web UI demonstrating how to interact with the server's API:
+
+*   `simple_client.py`: Basic requests for listing resources and non-streaming TTT.
+*   `streaming_client.py`: Demonstrates handling Server-Sent Events for TTT streaming.
+*   `image_client.py`: Shows how to send TTI requests and save the resulting image.
+*   `chat_app.py`: An interactive console chat application with history and settings.
+*   `lord_of_discord.py`: A Discord bot integrating with the server.
+*   `web/`: A simple HTML/CSS/JS web client (requires CORS configuration on the server).
+
+See the individual `README.md` files within each example's directory for specific instructions.
+
+## Development
+
+*   **Testing:** A test suite using `pytest` is included in the `tests/` directory. Run tests (after installing dev dependencies: `pip install -e .[dev]`) using the `pytest` command in the project root.
+*   **Linting/Formatting:** Uses `ruff` for linting and `black` for formatting. Configure your IDE or run manually:
+    ```bash
+    (venv) ruff check .
+    (venv) black .
+    ```
+*   **Contributing:** Contributions are welcome! Please follow standard GitHub practices (fork, feature branch, pull request). Ensure tests pass and code is formatted.
 
 ## License
 
@@ -320,4 +379,6 @@ Licensed under the Apache License, Version 2.0 (the "License"); you may not use 
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
-## Discla
+## Disclaimer
+
+This software is provided "as is" without warranty of any kind. Features involving code execution (like the `python_builder_executor` personality) are experimental and **extremely dangerous**. Use them only in isolated, secure environments and at your own risk. The developers are not responsible for any damage or data loss caused by the use of this software. Always review code generated by LLMs before execution.

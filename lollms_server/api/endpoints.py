@@ -1,13 +1,14 @@
 # lollms_server/api/endpoints.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response # Keep Response
 from fastapi.responses import StreamingResponse, JSONResponse # Keep JSONResponse
-import logging
+import ascii_colors as logging
 from typing import List, Dict, Any, Union
 from pydantic import ValidationError
 # --- IMPORT: Use updated models ---
 from .models import (
     GenerateRequest, ListBindingsResponse, ListPersonalitiesResponse, PersonalityInfo,
-    ListFunctionsResponse, ListModelsResponse, ModelInfo, ListAvailableModelsResponse, InputData # Make sure InputData is here if needed elsewhere
+    ListFunctionsResponse, ListModelsResponse, ModelInfo, ListAvailableModelsResponse, InputData,
+    HealthResponse
 )
 # Core components (NO direct import from main.py)
 from lollms_server.core.config import AppConfig
@@ -18,6 +19,7 @@ from lollms_server.core.functions import FunctionManager
 from lollms_server.core.resource_manager import ResourceManager
 from lollms_server.core.generation import process_generation_request, _scan_models_folder
 
+import importlib.metadata # To get version
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -39,6 +41,35 @@ def get_resource_manager_dep(request: Request) -> ResourceManager:
     if not hasattr(request.app.state, 'resource_manager'): raise HTTPException(status_code=503, detail="Resource Manager not ready")
     return request.app.state.resource_manager
 
+# === NEW Health Check Endpoint ===
+@router.get("/health",
+            response_model=HealthResponse,
+            summary="Check Server Health and Configuration",
+            description="Provides server status and basic configuration info, like whether an API key is required.",
+            tags=["Server Info"]) # Optional tag for grouping in docs
+async def health_check(config: AppConfig = Depends(get_config_dep)):
+    """
+    Checks server health and returns basic configuration status.
+    This endpoint does NOT require API key authentication.
+    """
+    is_key_required = bool(config.security.allowed_api_keys) # True if the list is not empty
+    server_version = None
+    try:
+        # Attempt to get version from installed package metadata
+        server_version = importlib.metadata.version("lollms_server")
+    except importlib.metadata.PackageNotFoundError:
+        logger.warning("Could not determine lollms_server version from package metadata.")
+        # You could try reading from pyproject.toml as a fallback if needed
+
+    return HealthResponse(
+        status="ok",
+        api_key_required=is_key_required,
+        version=server_version
+        # Optionally add defaults if desired, e.g.:
+        # default_ttt_binding=config.defaults.ttt_binding,
+        # default_ttt_model=config.defaults.ttt_model
+    )
+# === END Health Check Endpoint ===
 
 # === Listing Endpoints (Ensure ModelInfo conforms in Phase 7) ===
 

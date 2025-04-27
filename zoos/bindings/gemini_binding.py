@@ -1,6 +1,6 @@
 # zoos/bindings/gemini_binding.py
 import asyncio
-import logging
+import ascii_colors as logging
 import os
 import base64
 from datetime import datetime
@@ -82,7 +82,7 @@ class GeminiBinding(Binding):
     async def health_check(self) -> Tuple[bool, str]:
         """Checks API key validity by listing models."""
         if not self.api_key: return False, "API key not configured."
-        try: await self.genai.list_models(); return True, "Connection successful."
+        try: self.genai.list_models(); return True, "Connection successful."
         except google.api_core.exceptions.PermissionDenied as e: logger.error(f"Health check fail (Permission Denied): {e}"); return False, f"Permission Denied: {e}"
         except google.api_core.exceptions.GoogleAPIError as e: logger.error(f"Health check fail (API Error): {e}"); return False, f"Google API Error: {e}"
         except Exception as e: logger.error(f"Health check fail (Error): {e}", exc_info=True); return False, f"Unexpected Error: {e}"
@@ -108,7 +108,7 @@ class GeminiBinding(Binding):
         logger.info(f"Gemini '{self.binding_name}': Listing models..."); available_models = []
         if not self.api_key: raise ValueError("API key not configured.")
         try:
-            api_models = await self.genai.list_models()
+            api_models = self.genai.list_models()
             for model in api_models:
                 if 'generateContent' in getattr(model, 'supported_generation_methods', []):
                     parsed_data = self._parse_gemini_details(model)
@@ -125,7 +125,7 @@ class GeminiBinding(Binding):
             logger.info(f"Gemini '{self.binding_name}': Preparing model '{model_name}'.")
             if not self.api_key: logger.error("Cannot load model, API key missing."); return False
             try:
-                model_info = await self.genai.get_model(f"models/{model_name}")
+                model_info = self.genai.get_model(f"models/{model_name}")
                 logger.info(f"Verified model '{model_name}' exists.")
                 detected_ctx = getattr(model_info, 'input_token_limit', None); detected_max_out = getattr(model_info, 'output_token_limit', None)
                 if self.auto_detect_limits and detected_ctx and detected_max_out:
@@ -215,7 +215,7 @@ class GeminiBinding(Binding):
         content_payload = await self._process_content(prompt, multimodal_data)
         loaded_images = [part for part in content_payload if isinstance(part, Image.Image)] if isinstance(content_payload, list) else []
         try:
-            response = await self.model.generate_content( content_payload, generation_config=generation_config, stream=False, safety_settings=self.safety_settings )
+            response = self.model.generate_content( content_payload, generation_config=generation_config, stream=False, safety_settings=self.safety_settings )
             if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
                 reason = response.prompt_feedback.block_reason.name; logger.error(f"Generation blocked (prompt safety): {reason}"); raise ValueError(f"Blocked (prompt safety): {reason}")
             if not response.candidates or not hasattr(response.candidates[0], 'content') or not hasattr(response.candidates[0].content, 'parts'):

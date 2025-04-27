@@ -1,6 +1,6 @@
 # zoos/bindings/llamacpp_binding.py
 import asyncio
-import logging
+import ascii_colors as logging
 import sys
 import subprocess
 import json
@@ -30,7 +30,7 @@ except ImportError:
 
 from lollms_server.core.bindings import Binding
 from lollms_server.core.resource_manager import ResourceManager
-from lollms_server.utils.helpers import trace_exception
+from ascii_colors import trace_exception
 try:
     from lollms_server.api.models import StreamChunk, InputData, ModelInfo
 except ImportError:

@@ -1,6 +1,6 @@
 # zoos/bindings/ollama_binding.py
 import asyncio
-import logging
+import ascii_colors as logging
 from typing import Dict, Any, Optional, Union, AsyncGenerator, Tuple, List
 import base64
 from io import BytesIO

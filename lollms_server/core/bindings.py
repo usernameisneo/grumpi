@@ -3,7 +3,7 @@ import importlib
 import inspect
 from abc import ABC, abstractmethod
 from pathlib import Path
-import logging
+import ascii_colors as logging
 from typing import List, Dict, Any, Type, Optional, AsyncGenerator, Tuple, Union
 import asyncio
 import json

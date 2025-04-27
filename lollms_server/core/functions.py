@@ -2,7 +2,7 @@
 import importlib
 import inspect
 from pathlib import Path
-import logging
+import ascii_colors as logging
 from typing import List, Dict, Any, Callable, Optional, Tuple
 import asyncio
 

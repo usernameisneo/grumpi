@@ -21,6 +21,7 @@ classifiers = [
     "Development Status :: 3 - Alpha", # Start with Alpha or Beta
 ]
 dependencies = [
+    "ascii_colors>=0.8.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.23.0",
     "pydantic>=2.0.0",
@@ -48,6 +49,22 @@ dev = [
     "pytest-mock>=3.5.0",    # Fixture for easy mocking
     "black",                 # Code formatter
     "ruff"                   # Linter
+
+    # Documentation generation
+    "sphinx>=4.0",            # Core Sphinx package
+    "sphinx-rtd-theme",       # Common ReadTheDocs theme
+    "sphinx-autodoc-typehints", # Better type hint rendering in docs
+    "sphinx-autobuild",
+    "sphinx_copybutton",
+    "furo",
+    "myst-parser",
+    "toml",
+    # Linting & Code Quality
+    "flake8",                 # Linter (already configured below)
+    "mypy",                   # Static type checker (already configured below)
+    "black",                  # Opinionated code formatter
+    "isort",                  # Import sorter
+    # Add other dev tools like pytest, coverage etc. here if needed
 ]
 
 # Optional: Define entry points if you want a command-line script

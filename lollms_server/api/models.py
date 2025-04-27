@@ -3,9 +3,19 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator, ValidationError
 from typing import List, Dict, Optional, Any, Union, Literal
 from datetime import datetime
 import base64 # For validator example
-import logging # For validator warning
+import ascii_colors as logging # For validator warning
+import importlib.metadata
 
 logger = logging.getLogger(__name__)
+
+class HealthResponse(BaseModel):
+    """Response model for the health check endpoint."""
+    status: str = Field("ok", description="Indicates the server is running.")
+    version: Optional[str] = Field(None, description="The version of the lollms-server.")
+    api_key_required: bool = Field(..., description="Whether the server requires an API key for most endpoints.")
+    # Add other non-sensitive info if desired, e.g.:
+    # default_ttt_binding: Optional[str] = None
+    # default_ttt_model: Optional[str] = None
 
 # --- NEW: Input Data Model ---
 class InputData(BaseModel):

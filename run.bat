@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 REM --- Configuration ---
 set "CONFIG_FILE=config.toml"
 set "VENV_PATH=venv"
-set "DEFAULT_HOST=0.0.0.0"
+set "DEFAULT_HOST=localhost"
 set "DEFAULT_PORT=9600"
 
 REM --- Activate virtual environment ---

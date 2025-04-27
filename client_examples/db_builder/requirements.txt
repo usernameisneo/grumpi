@@ -1,0 +1,4 @@
+# Required Python packages for the LOLLMS Training Data Builder application
+
+gradio
+requests

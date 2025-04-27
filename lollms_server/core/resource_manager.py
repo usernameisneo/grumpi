@@ -1,6 +1,6 @@
 # lollms_server/core/resource_manager.py
 import asyncio
-import logging
+import ascii_colors as logging
 from .config import ResourceManagerConfig
 from typing import Optional, Any
 from contextlib import asynccontextmanager

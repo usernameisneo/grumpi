@@ -1,5 +1,5 @@
 # lollms_server/utils/dependency_manager.py
-import logging
+import ascii_colors as logging
 import asyncio
 import subprocess # Needed for sync version
 import sys

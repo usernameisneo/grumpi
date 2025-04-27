@@ -1,6 +1,6 @@
 # zoos/personalities/python_builder_executor/scripts/workflow.py
 
-import logging
+import ascii_colors as logging
 import asyncio
 import subprocess # For running commands
 import platform # To detect OS
@@ -190,7 +190,9 @@ async def run_workflow(prompt: str, params: Dict[str, Any], context: Dict[str, A
             script_path.write_text(python_code, encoding='utf-8'); logger.info(f"Attempt {attempt+1}: Code saved to: {script_path}"); final_report += f"Code Saving {attempt+1}: Saved to `{script_path}`.\n"
         except Exception as e:
             logger.error(f"Attempt {attempt+1}: Failed save: {e}", exc_info=True); final_report += f"Code Saving {attempt+1}: Failed - Error: {e}\n"; last_error = f"Failed save: {e}"
-            if script_path and script_path.exists(): try: script_path.unlink(); logger.info(f"Cleaned up script: {script_path}"); except OSError: pass
+            if script_path and script_path.exists(): 
+                try: script_path.unlink(); logger.info(f"Cleaned up script: {script_path}"); 
+                except OSError: pass
             script_path = None; continue
 
         # --- d) Execute Code ---

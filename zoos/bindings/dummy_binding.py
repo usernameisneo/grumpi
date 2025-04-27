@@ -1,6 +1,6 @@
 # zoos/bindings/dummy_binding.py
 import asyncio
-import logging
+import ascii_colors as logging
 import time
 import base64
 from typing import Dict, Any, Optional, Union, AsyncGenerator, Tuple, List

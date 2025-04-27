@@ -2,7 +2,7 @@
 import importlib
 import sys
 from pathlib import Path
-import logging
+import ascii_colors as logging
 from typing import List, Tuple, Type, Any, Optional
 
 logger = logging.getLogger(__name__)

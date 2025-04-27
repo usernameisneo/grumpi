@@ -1,7 +1,7 @@
 # lollms_server/core/personalities.py
 import yaml
 from pathlib import Path
-import logging
+import ascii_colors as logging
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field, ValidationError
 import asyncio # Keep asyncio if used elsewhere in the file

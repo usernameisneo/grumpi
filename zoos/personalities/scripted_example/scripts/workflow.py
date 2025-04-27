@@ -1,5 +1,5 @@
 # zoos/personalities/scripted_example/scripts/code_exec_workflow.py
-import logging
+import ascii_colors as logging
 import asyncio
 from typing import Any, Dict, Optional, List
 from pathlib import Path # Import Path

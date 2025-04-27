@@ -1,6 +1,6 @@
 # lollms_server/utils/helpers.py
 import base64
-import logging
+import ascii_colors as logging
 import re
 from typing import Union, Tuple, List, Dict, Any
 

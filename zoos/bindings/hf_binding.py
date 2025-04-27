@@ -1,5 +1,5 @@
 # zoos/bindings/hf_binding.py
-import logging
+import ascii_colors as logging
 from typing import Dict, Any, Optional, Union, AsyncGenerator, Tuple, List
 
 from lollms_server.core.bindings import Binding

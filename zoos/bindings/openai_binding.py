@@ -1,6 +1,6 @@
 # zoos/bindings/openai_binding.py
 import asyncio
-import logging
+import ascii_colors as logging
 from typing import Dict, Any, Optional, Union, AsyncGenerator, Tuple, List
 from contextlib import nullcontext
 import os

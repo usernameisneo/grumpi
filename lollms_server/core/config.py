@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, DirectoryPath, FilePath, HttpUrl
 from typing import List, Dict, Optional, Any, Union
 from pathlib import Path
 import os
-import logging
+import ascii_colors as logging
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)

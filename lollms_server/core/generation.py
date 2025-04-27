@@ -1,5 +1,5 @@
 # lollms_server/core/generation.py
-import logging
+import ascii_colors as logging
 import time
 import json
 import asyncio

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request # Request needed for dependencies
 from contextlib import asynccontextmanager
-import logging
+import ascii_colors as logging
 import uvicorn
 from fastapi.staticfiles import StaticFiles # Import StaticFiles
 from fastapi.responses import FileResponse # Import FileResponse
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
         # Get the root logger and set its effective level
         root_logger = logging.getLogger()
-        root_logger.setLevel(log_level_int)
+        root_logger.setLevel(log_level_name)
 
         # Optional: Update level for existing handlers if needed (basicConfig adds one)
         # for handler in root_logger.handlers:
