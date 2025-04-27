@@ -31,6 +31,8 @@
 *   **Extensible Function Calling:** Allows defining custom Python functions that can be discovered and executed within scripted personality workflows.
 *   **(Optional) Integrated Web UI:** Includes a basic Vue.js frontend served directly by FastAPI for easy interaction and testing (configurable).
 *   **Cross-Platform:** Includes installation scripts for Linux, macOS, and Windows.
+*   **Tokenizer Utilities:** API endpoints to tokenize, detokenize, and count tokens using the active binding's model.
+*   **Model Information:** API endpoint to retrieve context size and other details about the currently loaded model for a binding.
 
 ## Core Concepts
 
@@ -160,12 +162,35 @@ All `/api/v1/*` endpoints require authentication. Include a valid API key from y
 
 ### Key Endpoints
 
+#### Listing
+
 *   **`GET /api/v1/list_bindings`**: Lists discovered binding types and configured instances.
 *   **`GET /api/v1/list_personalities`**: Lists loaded and enabled personalities.
 *   **`GET /api/v1/list_functions`**: Lists discovered custom functions.
 *   **`GET /api/v1/list_available_models/{binding_name}`**: Asks a specific binding instance (e.g., `default_ollama`) to list models it can access. Returns detailed model info including capabilities.
 *   **`GET /api/v1/list_models`**: Lists models found in the configured `models_folder` subdirectories (basic file scan).
-*   **`POST /api/v1/generate`**: The main endpoint for triggering generation tasks.
+
+#### Generation
+
+*   **`POST /api/v1/generate`**: The main endpoint for triggering generation tasks (TTT, TTI, etc.). See details below.
+
+#### Utilities (New!)
+
+*   **`POST /api/v1/tokenize`**: Tokenizes text using the specified binding's currently loaded model.
+    *   **Request:** `{"text": "string", "binding_name": "string", "add_bos": true, "add_eos": false}`
+    *   **Response:** `{"tokens": [int], "count": int}`
+    *   **Note:** Requires a model to be loaded on the binding. Not all bindings support this.
+*   **`POST /api/v1/detokenize`**: Converts token IDs back to text using the specified binding's currently loaded model.
+    *   **Request:** `{"tokens": [int], "binding_name": "string"}`
+    *   **Response:** `{"text": "string"}`
+    *   **Note:** Requires a model to be loaded on the binding. Not all bindings support this.
+*   **`POST /api/v1/count_tokens`**: Counts tokens in the provided text using the specified binding's currently loaded model.
+    *   **Request:** `{"text": "string", "binding_name": "string"}`
+    *   **Response:** `{"count": int}`
+    *   **Note:** Requires a model to be loaded on the binding. Relies on the binding's `tokenize` implementation.
+*   **`GET /api/v1/get_model_info/{binding_name}`**: Retrieves info about the *currently loaded* model for a specific binding.
+    *   **Response:** `{"binding_name": "string", "model_name": "string|null", "context_size": int|null, "max_output_tokens": int|null, "supports_vision": bool, "supports_audio": bool, "details": {}}`
+    *   **Note:** Does not load a model. Returns info only if a model is already active on the binding.
 
 ### `/generate` Endpoint Details
 
@@ -269,6 +294,9 @@ Add your own components by placing Python files/folders in the directories speci
     *   `async generate(prompt: str, params: Dict, request_info: Dict, multimodal_data: List[InputData]) -> Union[str, Dict]`: Core generation logic. Process `multimodal_data` based on `get_supported_input_modalities`. Return `{"text": "..."}` or `{"image_base64": "...", ...}` etc.
     *   `(Optional)` `async generate_stream(...) -> AsyncGenerator[Dict, None]`: Implement for streaming. Yield `StreamChunk`-like dicts.
     *   `(Optional)` `async health_check() -> Tuple[bool, str]`: Check connectivity/status.
+    *   `(Optional)` `async tokenize(text, add_bos, add_eos) -> List[int]`: Implement if tokenization is supported.
+    *   `(Optional)` `async detokenize(tokens) -> str`: Implement if detokenization is supported.
+    *   `async get_current_model_info() -> Dict[str, Any]`: Return info about the loaded model.
 3.  **Configure:** Add an instance in `config.toml`:
     ```toml
     [bindings.my_instance_name]

@@ -174,29 +174,71 @@ def make_api_call(endpoint: str, method: str = "GET", payload: Optional[Dict] = 
 
 def make_generate_request(payload: Dict[str, Any], stream: bool) -> Optional[Union[str, Dict, SSEClient]]:
     """Makes a request specifically to the /generate endpoint."""
-    url = f"{BASE_URL}/generate"; headers = HEADERS_STREAM if stream else HEADERS_NO_STREAM; timeout = DEFAULT_TIMEOUT
-    try:
-        response = requests.post(url, headers=headers, json=payload, stream=stream, timeout=timeout)
-        response.raise_for_status()
-        content_type = response.headers.get("content-type", "")
-        if stream:
-            if "text/event-stream" in content_type: return SSEClient(response)
-            elif "text/plain" in content_type: print_system("Warning: Server returned plain text instead of stream."); return response.text
-            else: print_error(f"Server returned unexpected Content-Type '{content_type}' for streaming."); return None
+    url = f"{BASE_URL}/generate"
+    headers = HEADERS_STREAM if stream else HEADERS_NO_STREAM
+    timeout = DEFAULT_TIMEOUT
+
+    # --- VALIDATE/ENSURE input_data structure ---
+    if "input_data" not in payload or not isinstance(payload["input_data"], list) or not payload["input_data"]:
+        # Attempt to convert old prompt field if present
+        if "prompt" in payload and isinstance(payload["prompt"], str):
+             print_warning("Converting legacy 'prompt' field to 'input_data'.")
+             payload["input_data"] = [{"type": "text", "role": "user_prompt", "data": payload["prompt"]}]
+             del payload["prompt"]
         else:
-            if "application/json" in content_type: return response.json()
-            else: print_system(f"Warning: Expected JSON but got {content_type}"); return response.text
-    except requests.exceptions.Timeout: print_error(f"Request timed out after {timeout} seconds to {url}")
-    except requests.exceptions.ConnectionError as e: print_error(f"Could not connect to server at {url}. Is it running? Details: {e}")
+            print_error("Generate request payload missing valid 'input_data' list.")
+            return None
+    # --- END VALIDATION ---
+
+    payload['stream'] = stream # Explicitly set stream status in payload
+
+    try:
+        # Use requests for simplicity in this console app
+        response = requests.post(url, headers=headers, json=payload, stream=stream, timeout=timeout)
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+
+        content_type = response.headers.get("content-type", "")
+
+        if stream:
+            if "text/event-stream" in content_type:
+                return SSEClient(response) # Return the client for processing
+            elif "text/plain" in content_type:
+                # Handle cases where server might fallback or error out as plain text
+                print_system("Warning: Server returned plain text instead of stream.")
+                return response.text
+            else:
+                print_error(f"Server returned unexpected Content-Type '{content_type}' for streaming.")
+                print(f"Body: {response.text[:500]}") # Show beginning of body
+                return None
+        else:
+            # Non-streaming: Expect application/json
+            if "application/json" in content_type:
+                return response.json() # Return the parsed JSON response
+            else:
+                print_system(f"Warning: Expected JSON but got {content_type}")
+                return response.text # Return raw text as fallback
+    except requests.exceptions.Timeout:
+        print_error(f"Request timed out after {timeout} seconds to {url}")
+    except requests.exceptions.ConnectionError as e:
+        print_error(f"Could not connect to server at {url}. Is it running? Details: {e}")
     except requests.exceptions.RequestException as e:
         print_error(f"Generate request failed to {url}: {e}")
         if hasattr(e, 'response') and e.response is not None:
-            status = e.response.status_code; body = e.response.text; detail = f"Status Code: {status}"
-            try: detail += f", Detail: {e.response.json().get('detail', body)}"
-            except json.JSONDecodeError: detail += f", Body: {body[:200]}..."
+            status = e.response.status_code
+            body = e.response.text
+            detail = f"Status Code: {status}"
+            try:
+                # Attempt to parse detail from JSON error response
+                error_json = e.response.json()
+                detail += f", Detail: {error_json.get('detail', body)}"
+            except json.JSONDecodeError:
+                detail += f", Body: {body[:200]}..." # Fallback to raw body snippet
             print(f"  Server Response: {detail}")
-    except Exception as e: print_error(f"An unexpected error occurred during generate request: {e}")
-    return None
+        # Optionally return the error response content if needed downstream
+        # return e.response.text if hasattr(e, 'response') and e.response else None
+    except Exception as e:
+        print_error(f"An unexpected error occurred during generate request: {e}")
+    return None # Indicate failure
 
 # --- Menu Navigation ---
 
@@ -317,57 +359,146 @@ if __name__ == "__main__":
 
         if user_input.lower().startswith("/imagine "):
             image_prompt = user_input[len("/imagine "):].strip()
-            if not image_prompt: print_system("Please provide a prompt after /imagine."); chat_history.append({"role": "system", "content": "Image generation skipped (no prompt)." }); continue
+            if not image_prompt:
+                print_system("Please provide a prompt after /imagine.")
+                chat_history.append({"role": "system", "content": "Image generation skipped (no prompt)." })
+                continue
+
             print_system(f"Generating image for: '{image_prompt}'...")
             payload = {
                 "input_data": [{"type": "text", "role": "user_prompt", "data": image_prompt}],
-                "generation_type": "tti", "binding_name": current_tti_binding, "model_name": current_tti_model, "stream": False
+                "generation_type": "tti",
+                "binding_name": current_tti_binding,
+                "model_name": current_tti_model,
+                "stream": False # TTI is non-streaming
             }
             response_data = make_generate_request(payload, stream=False)
-            if response_data and isinstance(response_data, dict):
-                output_data = response_data.get("output", {}) # Assuming nested output
-                image_b64 = output_data.get("image_base64")
-                if image_b64: saved_path = save_base64_image(image_b64, image_prompt); msg = f"Image generated and saved to {saved_path.name}" if saved_path else "Image generation succeeded but saving failed."; chat_history.append({"role": "system", "content": msg})
-                else: error_msg = output_data.get("error", "Response did not contain 'image_base64' data."); print_error(f"Image generation failed: {error_msg}"); chat_history.append({"role": "system", "content": f"Image generation failed: {error_msg}"})
-            elif response_data: print_error(f"Received unexpected response format for image generation:\n{response_data}"); chat_history.append({"role": "system", "content": f"Image generation failed (unexpected response format)."})
-            else: chat_history.append({"role": "system", "content": "Image generation request failed."})
+
+            # Process the new output structure
+            if response_data and isinstance(response_data, dict) and "output" in response_data:
+                output_list = response_data.get("output", [])
+                image_found = False
+                for item in output_list:
+                    if isinstance(item, dict) and item.get("type") == "image" and item.get("data"):
+                        image_b64 = item["data"]
+                        metadata = item.get("metadata", {})
+                        # Use metadata prompt if available, else original
+                        prompt_used = metadata.get("prompt_used", image_prompt)
+                        saved_path = save_base64_image(image_b64, prompt_used)
+                        msg = f"Image generated and saved to {saved_path.name}" if saved_path else "Image generation succeeded but saving failed."
+                        chat_history.append({"role": "system", "content": msg})
+                        image_found = True
+                        break # Assume only one image for now
+                    elif isinstance(item, dict) and item.get("type") == "error":
+                         error_msg = item.get('data', 'Unknown error from server.')
+                         print_error(f"Image generation failed: {error_msg}")
+                         chat_history.append({"role": "system", "content": f"Image generation failed: {error_msg}"})
+                         image_found = True # Consider error as handled
+                         break
+
+                if not image_found:
+                    print_error("Response did not contain valid image data.")
+                    chat_history.append({"role": "system", "content": "Image generation failed: No image data in response."})
+
+            elif response_data: # Handle unexpected format
+                print_error(f"Received unexpected response format for image generation:\n{response_data}")
+                chat_history.append({"role": "system", "content": f"Image generation failed (unexpected response format)."})
+            else: # Handle request failure
+                chat_history.append({"role": "system", "content": "Image generation request failed."})
         else:
             print_ai_prefix(current_personality)
             payload = {
-                "input_data": [{"type": "text", "role": "user_prompt", "data": user_input}],
-                "generation_type": "ttt", "personality": current_personality, "binding_name": current_ttt_binding, "model_name": current_ttt_model, "stream": True
+                "input_data": [{"type": "text", "role": "user_prompt", "data": user_input}], # Use input_data
+                "generation_type": "ttt",
+                "personality": current_personality,
+                "binding_name": current_ttt_binding,
+                "model_name": current_ttt_model,
+                "stream": True
             }
             result = make_generate_request(payload, stream=True)
-            if isinstance(result, str): print(result); chat_history.append({"role": "assistant", "content": result})
-            elif isinstance(result, SSEClient):
-                sse_client = result; full_ai_response = ""; stream_error_occurred = False
+
+            if isinstance(result, str): # Handle non-stream fallback
+                print(result)
+                chat_history.append({"role": "assistant", "content": result})
+            elif isinstance(result, SSEClient): # Handle stream
+                sse_client = result
+                full_ai_response = ""
+                stream_error_occurred = False
+                final_content_list = [] # To store final output list
+
                 try:
                     for event in sse_client.events():
                         if event.event == 'message' and event.data:
                             try:
-                                chunk_data = json.loads(event.data); chunk_type = chunk_data.get("type"); content = chunk_data.get("content")
-                                if chunk_type == "chunk" and content: print(content, end="", flush=True); full_ai_response += content
-                                elif chunk_type == "error":
-                                    error_msg = f"\n--- Stream Error: {content} ---"; print(error_msg, end="", flush=True)
-                                    if full_ai_response: chat_history.append({"role": "assistant", "content": full_ai_response})
-                                    chat_history.append({"role": "system", "content": f"Stream error occurred: {content}"}); full_ai_response = ""; stream_error_occurred = True; break
-                                elif chunk_type == "final":
-                                    final_content = chunk_data.get("content", full_ai_response)
-                                    if not full_ai_response and final_content: print(final_content, end="", flush=True); full_ai_response = final_content
-                                    print();
-                                    if full_ai_response and not stream_error_occurred: chat_history.append({"role": "assistant", "content": full_ai_response})
-                                    break
-                            except json.JSONDecodeError: print(f"\nError: Received non-JSON data: {event.data}")
-                            except Exception as e: print(f"\nError processing chunk: {e}")
-                    if full_ai_response and not stream_error_occurred and (not chat_history or chat_history[-1].get("content") != full_ai_response): print(); chat_history.append({"role": "assistant", "content": full_ai_response})
-                except requests.exceptions.ChunkedEncodingError: print_error("Stream connection broken.");
-                except Exception as e: print_error(f"Error processing stream: {e}")
-                finally:
-                     if full_ai_response and not stream_error_occurred and (not chat_history or chat_history[-1].get("content") != full_ai_response):
-                         if not chat_history[-1]["role"] == "assistant": # Avoid double adding if error happened after adding
-                            chat_history.append({"role": "assistant", "content": full_ai_response + " [Stream Error?]"})
+                                chunk_data = json.loads(event.data)
+                                chunk_type = chunk_data.get("type")
+                                content = chunk_data.get("content")
+                                metadata = chunk_data.get("metadata", {})
 
-            else: print(); chat_history.append({"role": "system", "content": "Text generation request failed."})
+                                if chunk_type == "chunk" and content:
+                                    # Only print text chunks directly
+                                    if isinstance(content, str):
+                                        print(content, end="", flush=True)
+                                        full_ai_response += content
+                                    # Handle potential binary chunks later if needed
+                                elif chunk_type == "error":
+                                    error_msg = f"\n--- Stream Error: {content} ---"
+                                    print(error_msg, end="", flush=True)
+                                    if full_ai_response: # Save whatever text came before error
+                                        chat_history.append({"role": "assistant", "content": full_ai_response})
+                                    chat_history.append({"role": "system", "content": f"Stream error occurred: {content}"})
+                                    full_ai_response = "" # Reset response
+                                    stream_error_occurred = True
+                                    break # Stop processing on error
+                                elif chunk_type == "info":
+                                     print(f"\n--- Stream Info: {content} ---", flush=True)
+                                elif chunk_type == "final":
+                                    # The final chunk's content should be List[OutputData]
+                                    final_content_list = content if isinstance(content, list) else []
+                                    print() # Newline after streaming
+                                    break # End of stream
+                            except json.JSONDecodeError:
+                                print(f"\nError: Received non-JSON data: {event.data}")
+                            except Exception as e:
+                                print(f"\nError processing chunk: {e}")
+                    # After stream ends, process final content
+                    if not stream_error_occurred:
+                        final_text = ""
+                        # Extract text from the final list
+                        for item in final_content_list:
+                             if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("data"), str):
+                                 final_text += item["data"]
+                             # Handle other types (e.g., images) if the bot should display them from TTT stream
+                             elif isinstance(item, dict) and item.get("type") == "image" and item.get("data"):
+                                  print_system("Received image data in final stream chunk.")
+                                  # Maybe save it like /imagine does?
+                                  save_base64_image(item['data'], f"stream_image_{int(time.time())}")
+                             # Add handling for audio, video etc.
+
+                        # Use extracted final text if available, otherwise fallback to accumulated stream text
+                        final_response_to_save = final_text if final_text else full_ai_response
+
+                        if final_response_to_save:
+                             chat_history.append({"role": "assistant", "content": final_response_to_save.strip()})
+                        elif not final_content_list: # No final content and no chunks received
+                             print_warning("Stream finished without content.")
+                             chat_history.append({"role": "system", "content": "(Stream finished without generating content)"})
+
+
+                except requests.exceptions.ChunkedEncodingError:
+                    print_error("Stream connection broken.")
+                    if full_ai_response: # Save partial response if stream breaks
+                        chat_history.append({"role": "assistant", "content": full_ai_response + " [Stream Interrupted]"})
+                except Exception as e:
+                    print_error(f"Error processing stream: {e}")
+                    if full_ai_response: # Save partial response on other errors
+                        chat_history.append({"role": "assistant", "content": full_ai_response + " [Stream Error]"})
+                finally:
+                    pass # Cleaned up redundant append check
+
+            else: # Handle non-stream, non-sse result from make_generate_request (e.g., error)
+                print() # Newline after AI prefix
+                chat_history.append({"role": "system", "content": "Text generation request failed."})
         save_history(chat_history)
 
     save_history(chat_history); save_settings(get_current_settings()); print_system("Goodbye!")

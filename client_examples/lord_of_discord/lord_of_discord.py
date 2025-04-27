@@ -156,21 +156,40 @@ async def make_api_call_async(endpoint: str, method: str = "GET", payload: Optio
 
 async def make_generate_request_async(payload: Dict[str, Any]) -> Optional[Union[str, Dict]]:
     """Makes async non-streaming /generate requests."""
-    url = f"{BASE_URL}/generate"; headers = HEADERS_NO_STREAM
+    url = f"{BASE_URL}/generate"
+    headers = HEADERS_NO_STREAM
     payload['stream'] = False # Ensure stream is false for bot
+
+    # --- VALIDATE/ENSURE input_data structure ---
+    if "input_data" not in payload or not isinstance(payload["input_data"], list) or not payload["input_data"]:
+        # Attempt to convert old prompt field if present
+        if "prompt" in payload and isinstance(payload["prompt"], str):
+             log_warning("Converting legacy 'prompt' field to 'input_data'.")
+             payload["input_data"] = [{"type": "text", "role": "user_prompt", "data": payload["prompt"]}]
+             del payload["prompt"]
+        else:
+            log_error("Generate request payload missing valid 'input_data' list.")
+            return None
+    # --- END VALIDATION ---
+
     loop = asyncio.get_running_loop()
     try:
+        # Use requests within executor for thread safety if needed, or httpx if preferred
         with requests.Session() as session:
             response = await loop.run_in_executor(None, lambda: session.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT))
-        response.raise_for_status()
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
         return response.json() # Expect JSON for non-stream generate
-    except requests.exceptions.Timeout: log_error(f"Request timed out to {url}")
-    except requests.exceptions.ConnectionError as e: log_error(f"Could not connect to server at {url}. Details: {e}")
+    except requests.exceptions.Timeout:
+        log_error(f"Request timed out to {url}")
+    except requests.exceptions.ConnectionError as e:
+        log_error(f"Could not connect to server at {url}. Details: {e}")
     except requests.exceptions.RequestException as e:
         log_error(f"Generate request failed to {url}: {e}")
-        if hasattr(e, 'response') and e.response is not None: log_error(f" Server Response: {e.response.status_code} - {e.response.text[:200]}")
-    except Exception as e: log_error(f"Unexpected error during generate request: {e}")
-    return None
+        if hasattr(e, 'response') and e.response is not None:
+            log_error(f" Server Response: {e.response.status_code} - {e.response.text[:200]}")
+    except Exception as e:
+        log_error(f"Unexpected error during generate request: {e}")
+    return None # Indicate failure
 
 # --- Discord Bot Setup ---
 intents = Intents.default(); intents.guilds = True; intents.members = True
@@ -218,41 +237,86 @@ async def on_ready():
 @app_commands.describe(prompt="Your message or question for the agent.")
 async def lollms_chat(interaction: discord.Interaction, prompt: str):
     """Handles the main chat command."""
-    try: await interaction.response.defer(ephemeral=False, thinking=True)
-    except HTTPException as e: log_error(f"Defer failed for /lollms: {e}"); return
+    try:
+        await interaction.response.defer(ephemeral=False, thinking=True)
+    except HTTPException as e:
+        log_error(f"Defer failed for /lollms: {e}")
+        return
 
-    # Use new input_data format
     payload = {
-        "input_data": [{"type": "text", "role": "user_prompt", "data": prompt}],
-        "generation_type": "ttt", "personality": current_personality,
-        "binding_name": current_ttt_binding, "model_name": current_ttt_model,
+        "input_data": [{"type": "text", "role": "user_prompt", "data": prompt}], # Use input_data
+        "generation_type": "ttt",
+        "personality": current_personality,
+        "binding_name": current_ttt_binding,
+        "model_name": current_ttt_model,
         "stream": False # Bot uses non-streaming
     }
     result = await make_generate_request_async(payload)
-    response_text = ""; status_emoji = "💡"
 
-    # Process the JSON response which should contain {"output": {"text": "..."}}
-    if isinstance(result, dict) and "output" in result and "text" in result["output"]: response_text = result["output"]["text"]
-    elif isinstance(result, dict): response_text = f"Unexpected JSON:\n```json\n{json.dumps(result, indent=2)[:1500]}\n```"; status_emoji = "⚠️"
-    elif result is None: response_text = "Failed to get response from LOLLMS server."; status_emoji = "❌"
-    else: response_text = f"Unexpected response type: {type(result)}"; log_error(f"Unexpected type: {type(result)}"); status_emoji = "❌"
-    if not response_text.strip(): response_text = "(Received empty response)"; status_emoji = "🤷"
+    response_text = ""
+    status_emoji = "💡"
 
+    # --- Process new output structure ---
+    if isinstance(result, dict) and "output" in result:
+        output_list = result.get("output", [])
+        found_text = False
+        for item in output_list:
+            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("data"), str):
+                response_text += item["data"] + "\n" # Combine multiple text outputs if present
+                found_text = True
+            elif isinstance(item, dict) and item.get("type") == "error":
+                 response_text += f"(Error from server: {item.get('data')})\n"
+                 status_emoji = "⚠️"
+                 found_text = True # Treat error as text content
+
+        response_text = response_text.strip() # Remove trailing newline
+
+        if not found_text:
+             response_text = f"(Received output, but no text found)\n```json\n{json.dumps(output_list, indent=2)[:1000]}\n```"
+             status_emoji = "🤷"
+
+    elif isinstance(result, dict): # Handle case where 'output' key is missing
+        response_text = f"Unexpected JSON structure (missing 'output'):\n```json\n{json.dumps(result, indent=2)[:1500]}\n```"
+        status_emoji = "⚠️"
+    elif result is None: # Handle API call failure
+        response_text = "Failed to get response from LOLLMS server."
+        status_emoji = "❌"
+    else: # Handle unexpected return type
+        response_text = f"Unexpected response type: {type(result)}"
+        log_error(f"Unexpected type from API: {type(result)}")
+        status_emoji = "❌"
+
+    if not response_text.strip():
+        response_text = "(Received empty response)"
+        status_emoji = "🤷"
+
+    # Construct and send reply (splitting logic remains the same)
     base_reply = f"👤 **{interaction.user.display_name}:** {prompt}\n\n{status_emoji} **({current_personality or 'Default'}) AI:** "
     chunks = split_message(response_text)
     try:
         first_chunk_content = base_reply + (chunks[0] if chunks else "(No content)")
         remaining_chunks = chunks[1:]
+
+        # Handle potential 2000 char limit in initial followup
         if len(first_chunk_content) > 2000:
-            await interaction.followup.send(base_reply); split_first = split_message(chunks[0])
-            for sub_chunk in split_first: await interaction.channel.send(sub_chunk) # type: ignore
-        else: await interaction.followup.send(first_chunk_content)
-        for chunk in remaining_chunks: await interaction.channel.send(chunk) # type: ignore
-    except HTTPException as e: 
-        log_error(f"Failed sending response: {e}")
-        try: 
-            await interaction.followup.send("❌ Error sending response.")
-        except Exception: pass
+            await interaction.followup.send(base_reply) # Send the prefix first
+            split_first = split_message(chunks[0]) # Split the actual first chunk
+            for sub_chunk in split_first:
+                await interaction.channel.send(sub_chunk) # type: ignore # Send sub-chunks in channel
+        else:
+            await interaction.followup.send(first_chunk_content) # Send combined prefix and first chunk
+
+        # Send remaining chunks
+        for chunk in remaining_chunks:
+            await interaction.channel.send(chunk) # type: ignore
+
+    except HTTPException as e:
+        log_error(f"Failed sending response to Discord: {e}")
+        try:
+            # Try sending a simplified error message
+            await interaction.followup.send("❌ Error: Could not send the full response to Discord.")
+        except Exception:
+            pass # Ignore errors during error reporting
 
 
 @bot.tree.command(name="lollms_imagine", description="Generate an image with LOLLMS.")

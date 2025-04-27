@@ -79,8 +79,11 @@ if __name__ == "__main__":
     loaded_personalities_dict = personalities_response['personalities']; personality_names = list(loaded_personalities_dict.keys())
     print(f"{INDENT}Found {len(personality_names)} loaded personalities.")
 
-    print_heading("Build Generation Request")
-    payload = {"stream": False, "input_data": []} # Use input_data list
+    # --- Use input_data list ---
+    payload: Dict[str, Any] = {
+        "stream": False,
+        "input_data": []
+    }
 
     print(f"\n{INDENT}Step 1: Choose Personality (or None)")
     chosen_personality_name = select_from_list(personality_names, "Personality", can_skip=True)
@@ -89,6 +92,7 @@ if __name__ == "__main__":
     print(f"\n{INDENT}Step 2: Choose Binding and Model")
     use_defaults = input(f"{INDENT}Use server default binding/model for TTT? (y/n): ").lower()
     if use_defaults != 'y':
+        # ... (binding/model selection logic remains the same, updates payload['binding_name'] and payload['model_name']) ...
         chosen_binding_name = select_from_list(binding_names, "Binding Instance")
         if not chosen_binding_name: print_error("Binding selection failed. Exiting."); sys.exit(1)
         payload['binding_name'] = chosen_binding_name
@@ -108,14 +112,13 @@ if __name__ == "__main__":
     print(f"\n{INDENT}Step 3: Enter Prompt")
     user_prompt = input(f"{INDENT}Prompt: ")
     if not user_prompt: print_error("Prompt cannot be empty. Exiting."); sys.exit(1)
-    # Add prompt to input_data
+    # Add prompt to input_data list
     payload['input_data'].append({"type": "text", "role": "user_prompt", "data": user_prompt})
-
-    # --- REMOVED: Extra Data (use input_data with specific roles instead) ---
 
     print(f"\n{INDENT}Step 4: Add Custom Parameters (Optional)")
     add_params = input(f"{INDENT}Add custom generation parameters (e.g., temperature)? (y/n): ").lower()
     if add_params == 'y':
+        # ... (parameter input logic remains the same, updates payload['parameters']) ...
          print(f"{INDENT}Enter parameters as key=value (e.g., temperature=0.5). Empty line when finished."); custom_params = {}
          while True:
               line = input(f"{INDENT}  key=value: ")
@@ -125,11 +128,9 @@ if __name__ == "__main__":
                    key, value_str = parts[0].strip(), parts[1].strip()
                    if key:
                         try: value = float(value_str)
-                        except ValueError: 
-                            try:
-                                value = int(value_str)
-                            except ValueError:
-                                value = value_str
+                        except ValueError:
+                            try: value = int(value_str)
+                            except ValueError: value = value_str # Treat as string if not number
                         custom_params[key] = value
                    else: print(f"{INDENT}  Invalid format.")
               else: print(f"{INDENT}  Invalid format.")
@@ -141,9 +142,29 @@ if __name__ == "__main__":
     response_content = make_request("POST", "/generate", json=payload)
 
     print_heading("Generation Result")
+    # --- Process new output structure ---
     if response_content is not None:
-        if isinstance(response_content, dict): print_json(response_content) # Print JSON structure
-        else: print(response_content) # Print raw text
-    else: print_error("Generation failed or returned no content.")
+        if isinstance(response_content, dict) and "output" in response_content:
+            output_list = response_content.get("output", [])
+            print(f"{INDENT}--- Response ---")
+            for i, item in enumerate(output_list):
+                print(f"{INDENT}Output Item {i+1}:")
+                print(f"{INDENT}  Type: {item.get('type')}")
+                # Optionally handle different types differently
+                if item.get('type') == 'image' and item.get('data'):
+                    print(f"{INDENT}  Data: (Base64 Image - {len(item['data'])} chars)")
+                    # Add saving logic here if desired
+                else:
+                    print(f"{INDENT}  Data: {item.get('data')}")
+                if item.get('mime_type'): print(f"{INDENT}  MIME Type: {item.get('mime_type')}")
+                if item.get('metadata'): print(f"{INDENT}  Metadata: {item.get('metadata')}")
+                print("-" * 20)
+        elif isinstance(response_content, dict): # Handle if 'output' key missing
+             print_error("Unexpected response format (missing 'output' list):")
+             print_json(response_content)
+        else: # Handle raw text response
+            print(response_content)
+    else:
+        print_error("Generation failed or returned no content.")
 
     print_heading("Client Finished")

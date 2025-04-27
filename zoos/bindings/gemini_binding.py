@@ -44,6 +44,7 @@ class GeminiBinding(Binding):
     binding_type_name = "gemini_binding"
 
     def __init__(self, config: Dict[str, Any], resource_manager: ResourceManager):
+        """Initializes the GeminiBinding."""
         super().__init__(config, resource_manager)
         if not gemini_installed: raise ImportError("Gemini binding requires 'google-generativeai' and 'pillow'.")
         self.api_key = self.config.get("google_api_key") or os.environ.get("GOOGLE_API_KEY")
@@ -66,18 +67,15 @@ class GeminiBinding(Binding):
         safety_templates = [ { "name": f"safety_setting_{cat.split('_')[-1].lower()}", "type": "str", "value": DEFAULT_SAFETY_SETTING, "options": SAFETY_OPTIONS, "help": f"Safety setting for {display_name}." } for cat, display_name in SAFETY_CATEGORIES.items() ]
         return { "type_name": cls.binding_type_name, "version": "1.2", "description": "Binding for Google Gemini API (text and vision).", "supports_streaming": True, "requirements": ["google-generativeai>=0.4.0", "pillow>=9.0.0"], "config_template": { "type": {"type": "string", "value": cls.binding_type_name, "required":True}, "google_api_key": {"type": "string", "value": "", "required":False}, "auto_detect_limits": {"type": "bool", "value": True, "required":False}, "ctx_size": {"type": "int", "value": 30720, "required":False}, "max_output_tokens": {"type": "int", "value": 2048, "required":False}, **{tmpl["name"]: tmpl for tmpl in safety_templates} } }
 
-    # --- IMPLEMENTED CAPABILITIES ---
     def get_supported_input_modalities(self) -> List[str]:
         """Returns supported input types (text, potentially image)."""
         modalities = ['text']
-        # Check vision support based on the *currently loaded* model
         if self.model_supports_vision: modalities.append('image')
         return modalities
 
     def get_supported_output_modalities(self) -> List[str]:
         """Returns supported output types."""
-        return ['text'] # Gemini chat models output text
-    # --- END IMPLEMENTED CAPABILITIES ---
+        return ['text']
 
     async def health_check(self) -> Tuple[bool, str]:
         """Checks API key validity by listing models."""
@@ -193,13 +191,13 @@ class GeminiBinding(Binding):
                     try:
                         img.close()
                     except Exception:
-                         pass
+                        pass
         if successful_loads == 0:
              logger.error("All image data failed to load. Falling back to text-only.")
-             for img_obj in loaded_images:
-                try:
-                    img_obj.close()
-                except Exception:
+             for img_obj in loaded_images: 
+                try: 
+                    img_obj.close(); 
+                except Exception: 
                     pass
              return prompt
         elif successful_loads < len(image_items): logger.warning("Some image data failed to load.")
@@ -215,7 +213,7 @@ class GeminiBinding(Binding):
         content_payload = await self._process_content(prompt, multimodal_data)
         loaded_images = [part for part in content_payload if isinstance(part, Image.Image)] if isinstance(content_payload, list) else []
         try:
-            response = self.model.generate_content( content_payload, generation_config=generation_config, stream=False, safety_settings=self.safety_settings )
+            response = await self.model.generate_content( content_payload, generation_config=generation_config, stream=False, safety_settings=self.safety_settings )
             if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
                 reason = response.prompt_feedback.block_reason.name; logger.error(f"Generation blocked (prompt safety): {reason}"); raise ValueError(f"Blocked (prompt safety): {reason}")
             if not response.candidates or not hasattr(response.candidates[0], 'content') or not hasattr(response.candidates[0].content, 'parts'):
@@ -268,3 +266,38 @@ class GeminiBinding(Binding):
         except Exception as e: logger.error(f"Unexpected stream error: {e}", exc_info=True); yield {"type": "error", "content": f"Unexpected error: {e}"}
         finally:
              if loaded_images: logger.debug(f"Closing {len(loaded_images)} images."); [img.close() for img in loaded_images if hasattr(img, 'close')]
+
+
+    # --- NEW: Tokenizer / Info ---
+    async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
+        """Tokenizes text using the Gemini API (count_tokens)."""
+        if not self._model_loaded or not self.model_name or not self.model: raise RuntimeError("Model not loaded for tokenization")
+        logger.info(f"Gemini '{self.binding_name}': Simulating tokenize via count_tokens...")
+        # Gemini API doesn't directly expose token IDs easily.
+        # We can use count_tokens to get the count, but not the IDs.
+        # Raise NotImplementedError as we cannot return the required List[int].
+        raise NotImplementedError("Gemini binding does not support direct tokenization.")
+        # If we just wanted the count:
+        # try:
+        #     response = await self.model.count_tokens(text)
+        #     return response.total_tokens # Incorrect return type!
+        # except Exception as e:
+        #     logger.error(f"Error counting tokens: {e}", exc_info=True)
+        #     raise RuntimeError(f"Failed to count tokens: {e}") from e
+
+    async def detokenize(self, tokens: List[int]) -> str:
+        """Detokenization is not supported by the Gemini API."""
+        if not self._model_loaded: raise RuntimeError("Model not loaded for detokenization")
+        raise NotImplementedError("Gemini binding does not support detokenization.")
+
+    async def get_current_model_info(self) -> Dict[str, Any]:
+        """Returns information about the currently loaded Gemini model."""
+        if not self._model_loaded or not self.model_name: return {}
+        return {
+            "name": self.model_name,
+            "context_size": self.current_ctx_size,
+            "max_output_tokens": self.current_max_output_tokens,
+            "supports_vision": self.model_supports_vision,
+            "supports_audio": False,
+            "details": {"info": f"Currently loaded Gemini model {self.model_name}"}
+        }

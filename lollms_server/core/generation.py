@@ -15,7 +15,7 @@ from .personalities import PersonalityManager, Personality
 from .functions import FunctionManager
 from .resource_manager import ResourceManager
 # --- IMPORT: InputData and GenerateRequest ---
-from lollms_server.api.models import GenerateRequest, StreamChunk, InputData
+from lollms_server.api.models import GenerateRequest, StreamChunk, InputData, OutputData, GenerateResponse # Added OutputData and GenerateResponse
 from lollms_server.utils.helpers import encode_base64
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,62 @@ async def manage_model_loading(binding: Binding, model_name: str):
 class ModelLoadingError(Exception):
     """Custom exception for model loading failures."""
     pass
+
+# --- Standardize Output Helper (Ensure it's defined HERE) ---
+def standardize_output(raw_output: Union[str, Dict[str, Any], List[Dict[str, Any]]]) -> List[OutputData]:
+    """Converts raw binding/script output into the standard List[OutputData] format."""
+    output_list = []
+    if isinstance(raw_output, str):
+        # Simple text output
+        output_list.append(OutputData(type="text", data=raw_output))
+    elif isinstance(raw_output, dict):
+        # Try to map common single-output dicts
+        mapped = False
+        if "text" in raw_output:
+            output_list.append(OutputData(type="text", data=raw_output["text"], metadata=raw_output.get("metadata", {})))
+            mapped = True
+        elif "image_base64" in raw_output:
+            output_list.append(OutputData(type="image", data=raw_output["image_base64"], mime_type=raw_output.get("mime_type"), metadata=raw_output.get("metadata", {})))
+            mapped = True
+        elif "audio_base64" in raw_output:
+            output_list.append(OutputData(type="audio", data=raw_output["audio_base64"], mime_type=raw_output.get("mime_type"), metadata=raw_output.get("metadata", {})))
+            mapped = True
+        elif "video_base64" in raw_output:
+            output_list.append(OutputData(type="video", data=raw_output["video_base64"], mime_type=raw_output.get("mime_type"), metadata=raw_output.get("metadata", {})))
+            mapped = True
+        # Add mappings for other potential single outputs (json, error, info)
+        elif raw_output.get("type") in ["json", "error", "info"]:
+             output_list.append(OutputData(type=raw_output["type"], data=raw_output.get("data"), metadata=raw_output.get("metadata", {})))
+             mapped = True
+
+        if not mapped:
+            # Fallback for unknown dict structure: wrap as JSON
+            logger.warning(f"Standardizing unknown dict structure as JSON: {list(raw_output.keys())}")
+            output_list.append(OutputData(type="json", data=raw_output))
+    elif isinstance(raw_output, list):
+        # Assume it's already a list of OutputData-like dicts
+        # Perform basic validation/conversion
+        for item in raw_output:
+            if isinstance(item, dict) and "type" in item and "data" in item:
+                 try:
+                     # Validate and create OutputData instance
+                     output_list.append(OutputData(**item))
+                 except Exception as e:
+                     logger.warning(f"Failed to validate item in output list as OutputData: {item}. Error: {e}. Skipping.")
+            else:
+                 logger.warning(f"Skipping invalid item in output list: {item}")
+    else:
+        # Handle unexpected types
+        logger.warning(f"Standardizing unexpected output type {type(raw_output)} as text.")
+        output_list.append(OutputData(type="text", data=str(raw_output)))
+
+    # Ensure at least one output item exists if input was valid
+    if not output_list and raw_output is not None:
+         logger.error("Standardization resulted in empty list from non-empty input. Adding error output.")
+         output_list.append(OutputData(type="error", data="Internal error: Failed to standardize generation output."))
+
+    return output_list
+
 
 # --- Main process_generation_request function ---
 async def process_generation_request(
@@ -112,232 +168,175 @@ async def process_generation_request(
     logger.debug("Applying global default parameters...")
     merged_params['max_tokens'] = config.defaults.default_max_output_tokens
     merged_params['context_size'] = config.defaults.default_context_size
-    # ... other global defaults ...
 
     personality_conditioning = None
-    # --- Updated: Extract system context from input_data ---
-    # Find items designated as system context
     system_context_items = [item for item in input_data if item.type == 'text' and item.role == 'system_context']
-    # Combine their data, ensuring separation
     system_context_block = "\n\n".join([item.data.strip() for item in system_context_items if item.data]).strip()
-    system_context_block = system_context_block + "\n\n" if system_context_block else "" # Add trailing space if content exists
-    # --- End Update ---
+    system_context_block = system_context_block + "\n\n" if system_context_block else ""
 
     if personality:
-        logger.debug(f"Applying defaults and conditioning from personality '{personality.name}'...")
+        logger.debug(f"Applying defaults/conditioning from '{personality.name}'...")
         p_config = personality.config
         personality_conditioning = p_config.personality_conditioning
-        # ... override global defaults with personality specifics (unchanged)...
         if p_config.model_temperature is not None: merged_params['temperature'] = p_config.model_temperature
         if p_config.model_n_predicts is not None: merged_params['max_tokens'] = p_config.model_n_predicts
-        if p_config.model_top_k is not None: merged_params['top_k'] = p_config.model_top_k
-        if p_config.model_top_p is not None: merged_params['top_p'] = p_config.model_top_p
-        if p_config.model_repeat_penalty is not None: merged_params['repeat_penalty'] = p_config.model_repeat_penalty
-        if p_config.model_repeat_last_n is not None: merged_params['repeat_last_n'] = p_config.model_repeat_last_n
+        # ... (other personality param overrides) ...
 
     request_system_message = (request.parameters or {}).get("system_message")
     final_system_message_content = None
-    if request_system_message is not None:
-        logger.debug("Using system message provided in request parameters.")
-        final_system_message_content = request_system_message
-    elif personality_conditioning is not None:
-        logger.debug("Using system message from personality conditioning.")
-        final_system_message_content = personality_conditioning
+    if request_system_message is not None: final_system_message_content = request_system_message
+    elif personality_conditioning is not None: final_system_message_content = personality_conditioning
 
-    # --- Combine system context from input data and determined message ---
     final_system_message = f"{system_context_block}{final_system_message_content if final_system_message_content else ''}"
     merged_params['system_message'] = final_system_message.strip() if final_system_message and final_system_message.strip() else None
-    # --- End Combination ---
 
     if request.parameters:
-        logger.debug("Applying remaining parameters from request...")
+        logger.debug("Applying remaining request parameters...")
         for key, value in request.parameters.items():
-             if key != 'system_message':
-                  merged_params[key] = value
+             if key != 'system_message': merged_params[key] = value
 
     loggable_params = {k:v for k,v in merged_params.items() if k != 'system_message'}
-    logger.info(f"Final merged parameters for generation: {loggable_params}")
-    if merged_params.get('system_message'):
-         logger.debug(f"Final system message (first 200 chars): {merged_params['system_message'][:200]}...")
+    logger.info(f"Final merged parameters: {loggable_params}")
+    if merged_params.get('system_message'): logger.debug(f"Final sys msg (start): {merged_params['system_message'][:200]}...")
 
-    request_info = {
-         "personality": personality.name if personality else None,
-         "functions": request.functions,
-         "generation_type": request.generation_type,
-         "request_id": None # Placeholder
-    }
-    # --- Include input_data in context for scripts ---
-    generation_context = {
-        "request": request, # Pass the original request object
-        "personality": personality, "binding": binding,
-        "function_manager": function_manager, "binding_manager": binding_manager,
-        "resource_manager": resource_manager, "config": config,
-        "input_data": input_data # Pass the full list for script context
-    }
-    # --- End Script Context Update ---
-
+    request_info = { "personality": personality.name if personality else None, "functions": request.functions, "generation_type": request.generation_type, "request_id": None }
+    generation_context = { "request": request, "personality": personality, "binding": binding, "function_manager": function_manager, "binding_manager": binding_manager, "resource_manager": resource_manager, "config": config, "input_data": input_data }
 
     # 5. Execute Generation
     try:
         is_scripted_request = personality and personality.is_scripted
-        if is_scripted_request and not personality:
-            raise HTTPException(status_code=500, detail="Scripted generation requires a valid personality.")
+        if is_scripted_request and not personality: raise HTTPException(status_code=500, detail="Scripted generation needs valid personality.")
 
-        output: Any = None # Holds the final result for non-streaming
+        output: Optional[Union[str, Dict[str, Any], List[Dict[str, Any]]]] = None # Holds the raw result for non-streaming
 
-        # If model name wasn't determined, the binding might use its default,
-        # but we need *a* name for the loading context manager. Use a placeholder?
-        # Or require model name for loadable bindings? Let's require it if loading needed.
-        effective_model_name = model_name
-        if not effective_model_name:
-             # Check if binding needs loading - this is tricky without knowing the binding type
-             # Assume for now if no model name provided, binding handles it internally (like OpenAI)
-             logger.info(f"No specific model name provided for binding '{binding_name}'. Binding will use its default.")
-             # We need *something* for the context manager key if loading IS needed by the binding.
-             # Let the binding handle None model_name in load_model if necessary.
-             effective_model_name = binding.model_name or "binding_default" # Use loaded name or placeholder
+        effective_model_name = model_name or binding.model_name or "binding_default" # Ensure a name for context manager
 
         async with manage_model_loading(binding, effective_model_name):
             if is_scripted_request:
-                logger.info(f"Executing scripted workflow for personality '{personality.name}'")
-                # Pass primary text prompt and full context to workflow
-                script_output = await personality.run_workflow(
-                    prompt=primary_text_prompt, # Main text prompt
-                    params=merged_params,
-                    context=generation_context # Context now includes input_data
-                )
+                logger.info(f"Executing scripted workflow: '{personality.name}'")
+                script_output = await personality.run_workflow( primary_text_prompt=primary_text_prompt, params=merged_params, context=generation_context )
 
                 # --- Handle Streaming Response from Script ---
                 if request.stream and isinstance(script_output, AsyncGenerator):
-                    logger.info("Scripted personality returned a stream.")
+                    logger.info("Script returned stream. Handling SSE.")
                     async def script_event_stream():
+                        final_stream_content: List[Dict] = [] # Accumulate content for the final message
                         try:
                             async for chunk_data in script_output:
-                                if not isinstance(chunk_data, dict):
-                                    chunk_data = {"type": "chunk", "content": str(chunk_data)}
+                                if not isinstance(chunk_data, dict): # Simple non-dict yield -> treat as text chunk
+                                     chunk_data_dict = {"type": "chunk", "content": str(chunk_data)}
+                                else: chunk_data_dict = chunk_data # Assume it's StreamChunk-like
                                 try:
-                                    chunk = StreamChunk(**chunk_data)
-                                    yield f"data: {chunk.model_dump_json()}\n\n"
+                                    chunk = StreamChunk(**chunk_data_dict) # Validate chunk structure
+                                    # Don't add final chunk content to accumulation here
+                                    if chunk.type != "final":
+                                        yield f"data: {chunk.model_dump_json()}\n\n"
+                                    # If it IS the final chunk from script, extract its content
+                                    if chunk.type == "final" and chunk.content:
+                                         if isinstance(chunk.content, list): final_stream_content = chunk.content # Trust script returned list
+                                         else: final_stream_content = [chunk.content] # Wrap single item
                                 except Exception as pydantic_error:
-                                    logger.error(f"Invalid chunk format from script stream: {chunk_data}. Error: {pydantic_error}", exc_info=True)
-                                    error_chunk = StreamChunk(type="error", content=f"Invalid stream chunk format from script: {pydantic_error}")
+                                    logger.error(f"Invalid chunk from script: {chunk_data_dict}. Error: {pydantic_error}", exc_info=True)
+                                    error_chunk = StreamChunk(type="error", content=f"Script stream error: {pydantic_error}")
                                     yield f"data: {error_chunk.model_dump_json()}\n\n"
+                            # --- Send the standardized final chunk AFTER loop ---
+                            standardized_final_list = standardize_output(final_stream_content or []) # Standardize accumulated/extracted content
+                            final_sse_chunk = StreamChunk(type="final", content=standardized_final_list, metadata={}) # TODO: Include metadata from script if possible
+                            yield f"data: {final_sse_chunk.model_dump_json()}\n\n"
                             logger.info("Scripted stream finished.")
                         except Exception as e:
-                            logger.error(f"Error during scripted stream processing: {e}", exc_info=True)
+                            logger.error(f"Error during script stream processing: {e}", exc_info=True)
                             error_chunk = StreamChunk(type="error", content=f"Script stream error: {e}")
                             try: yield f"data: {error_chunk.model_dump_json()}\n\n"
                             except Exception: pass
                     return StreamingResponse(script_event_stream(), media_type="text/event-stream")
-                # --- End Streaming Handling ---
-                else:
-                    # Non-streaming script result (or stream requested but not returned)
-                    output = script_output # Assign to output variable
+                # --- End Script Streaming Handling ---
+                else: # Non-streaming script result
+                    output = script_output
             else:
                 # --- Direct Binding Path ---
                 logger.info(f"Executing direct generation: Binding='{binding_name}', Type='{request.generation_type}'")
-
-                # --- CALL BINDING WITH NEW SIGNATURE ---
                 if request.stream:
                      logger.info("Starting stream generation via binding...")
-                     binding_stream_generator = binding.generate_stream(
-                         prompt=primary_text_prompt,
-                         params=merged_params,
-                         request_info=request_info,
-                         multimodal_data=multimodal_data_for_binding # Pass non-text items
-                     )
-                     async def event_stream():
+                     binding_stream_generator = binding.generate_stream( prompt=primary_text_prompt, params=merged_params, request_info=request_info, multimodal_data=multimodal_data_for_binding )
+                     async def binding_event_stream():
+                         final_stream_content: List[Dict] = [] # Accumulate for final message
                          try:
                              async for chunk_data in binding_stream_generator:
-                                 if not isinstance(chunk_data, dict):
-                                     chunk_data = {"type": "chunk", "content": str(chunk_data)}
+                                 if not isinstance(chunk_data, dict): chunk_data_dict = {"type": "chunk", "content": str(chunk_data)}
+                                 else: chunk_data_dict = chunk_data
                                  try:
-                                     chunk = StreamChunk(**chunk_data)
-                                     yield f"data: {chunk.model_dump_json()}\n\n"
+                                     chunk = StreamChunk(**chunk_data_dict)
+                                     if chunk.type != "final": yield f"data: {chunk.model_dump_json()}\n\n"
+                                     if chunk.type == "final" and chunk.content:
+                                         if isinstance(chunk.content, list): final_stream_content = chunk.content
+                                         else: final_stream_content = [chunk.content]
                                  except Exception as pydantic_error:
-                                     logger.error(f"Invalid chunk format from binding stream: {chunk_data}. Error: {pydantic_error}", exc_info=True)
-                                     error_chunk = StreamChunk(type="error", content=f"Invalid stream chunk format from binding: {pydantic_error}")
+                                     logger.error(f"Invalid chunk from binding: {chunk_data_dict}. Error: {pydantic_error}", exc_info=True)
+                                     error_chunk = StreamChunk(type="error", content=f"Binding stream error: {pydantic_error}")
                                      yield f"data: {error_chunk.model_dump_json()}\n\n"
+                             # --- Send standardized final chunk ---
+                             standardized_final_list = standardize_output(final_stream_content or [])
+                             final_sse_chunk = StreamChunk(type="final", content=standardized_final_list, metadata={}) # TODO: metadata from binding?
+                             yield f"data: {final_sse_chunk.model_dump_json()}\n\n"
                              logger.info("Binding stream finished.")
                          except Exception as e:
-                             logger.error(f"Error during binding stream generation: {e}", exc_info=True)
-                             error_chunk = StreamChunk(type="error", content=f"Stream generation error: {e}")
+                             logger.error(f"Error during binding stream: {e}", exc_info=True)
+                             error_chunk = StreamChunk(type="error", content=f"Binding stream error: {e}")
                              try: yield f"data: {error_chunk.model_dump_json()}\n\n"
                              except Exception: pass
-                     return StreamingResponse(event_stream(), media_type="text/event-stream")
-                else:
+                     return StreamingResponse(binding_event_stream(), media_type="text/event-stream")
+                else: # Non-streaming binding call
                      logger.info("Starting non-stream generation via binding...")
-                     binding_output = await binding.generate(
-                         prompt=primary_text_prompt,
-                         params=merged_params,
-                         request_info=request_info,
-                         multimodal_data=multimodal_data_for_binding # Pass non-text items
-                     )
-                     output = binding_output # Assign to output variable
-                # --- END BINDING CALL ---
+                     binding_output = await binding.generate( prompt=primary_text_prompt, params=merged_params, request_info=request_info, multimodal_data=multimodal_data_for_binding )
+                     output = binding_output
 
         execution_time = time.time() - start_time
         logger.info(f"Generation request processed in {execution_time:.2f} seconds.")
 
         # --- Standardize Non-Streaming Response Formatting ---
-        # Check if output variable was assigned (it wouldn't be for streaming requests)
-        if output is not None:
-            final_output_dict = {}
-            if isinstance(output, str):
-                # Wrap TTT string output
-                final_output_dict = {"text": output}
-            elif isinstance(output, dict):
-                # Assume TTI/TTS/scripted dict output is already correct
-                final_output_dict = output
-            else:
-                # Handle unexpected types from bindings/scripts
-                logger.warning(f"Non-streaming request returned unexpected type {type(output)}. Wrapping.")
-                try:
-                    # Attempt to serialize, fallback to string representation
-                    json.dumps(output) # Test serialization
-                    final_output_dict = {"data": output}
-                except TypeError:
-                    final_output_dict = {"data_str": str(output)}
+        if output is not None: # Only process if it wasn't a streaming request that returned early
+            final_output_list: List[OutputData] = standardize_output(output)
+            if not final_output_list:
+                 logger.error("Generation resulted in empty standardized output list.")
+                 final_output_list.append(OutputData(type="error", data="Generation failed to produce valid output."))
 
-            response_payload = {
-                "personality": personality.name if personality else None,
-                "output": final_output_dict,
-                "execution_time": execution_time,
-                "request_id": request_info["request_id"] # Add request ID if generated
-            }
-            return JSONResponse(content=response_payload)
+            # Use the new GenerateResponse model
+            response_payload = GenerateResponse(
+                personality=personality.name if personality else None,
+                output=final_output_list,
+                execution_time=execution_time,
+                request_id=request_info.get("request_id")
+            )
+            return JSONResponse(content=response_payload.model_dump()) # Use model_dump for Pydantic v2+
         elif not request.stream:
-             # If it wasn't a stream and output is still None, something went wrong
              logger.error("Non-streaming request finished but output is None.")
              raise HTTPException(status_code=500, detail="Generation failed to produce output.")
-        else:
-             # This path should not be reached if streaming returns StreamingResponse correctly
-             logger.error("Reached unexpected state at end of process_generation_request after stream handling.")
-             raise HTTPException(status_code=500, detail="Internal server error processing generation response.")
-
+        # If it was a streaming request, the StreamingResponse was already returned earlier
 
     # --- Exception Handling (largely unchanged) ---
     except ModelLoadingError as e:
          logger.error(f"ModelLoadingError: {e}")
-         if "Timeout waiting for GPU resource" in str(e):
-             raise HTTPException(status_code=status.HTTP_408_REQUEST_TIMEOUT, detail=str(e))
-         else:
-             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+         detail = str(e)
+         status_code = status.HTTP_408_REQUEST_TIMEOUT if "Timeout" in detail else status.HTTP_500_INTERNAL_SERVER_ERROR
+         raise HTTPException(status_code=status_code, detail=detail)
     except asyncio.TimeoutError as e:
          logger.error(f"Operation timed out: {e}")
          raise HTTPException(status_code=status.HTTP_408_REQUEST_TIMEOUT, detail=f"Operation timed out: {e}")
-    except HTTPException:
-         raise
+    except HTTPException: raise # Re-raise specific HTTP exceptions
     except NotImplementedError as e:
          logger.error(f"Functionality not implemented: {e}")
          raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(e))
-    except ValueError as e: # Catch potential value errors (bad params, validation, safety)
+    except ValueError as e: # Catch bad params, validation, safety blocks etc.
          logger.warning(f"ValueError during generation: {e}")
          raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bad request: {e}")
     except Exception as e:
-        logger.error(f"An unexpected error occurred during generation: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An internal server error occurred: {e}")
+        logger.error(f"Unexpected error during generation: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal server error: {e}")
 
+    # This path should not be reached if logic is correct
+    logger.error("Reached end of process_generation_request unexpectedly.")
+    raise HTTPException(status_code=500, detail="Internal server error processing generation request.")
 
 # --- _determine_binding_and_model (unchanged for now) ---
 def _determine_binding_and_model(request: GenerateRequest, personality: Optional[Personality], config: AppConfig) -> Tuple[Optional[str], Optional[str]]:

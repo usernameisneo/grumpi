@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager, nullcontext
 from datetime import datetime, timedelta
 from io import BytesIO
 from PIL import Image
+import random # For dummy tokenization
 
 from lollms_server.core.bindings import Binding
 from lollms_server.core.resource_manager import ResourceManager
@@ -20,21 +21,27 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 def generate_dummy_image_base64(width=256, height=256):
+    """Generates a simple black image encoded as base64."""
     img = Image.new('RGB', (width, height), color = 'black'); buffered = BytesIO()
     img.save(buffered, format="PNG"); return base64.b64encode(buffered.getvalue()).decode('utf-8')
-def generate_dummy_audio_base64(): return "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAAAAAA=="
+def generate_dummy_audio_base64():
+    """Returns a minimal valid WAV header base64 encoded."""
+    return "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAAAAAA=="
 
 class DummyBinding(Binding):
     """Dummy binding for testing purposes."""
     binding_type_name = "dummy_binding"
 
     def __init__(self, config: Dict[str, Any], resource_manager: ResourceManager):
+        """Initializes the DummyBinding."""
         super().__init__(config, resource_manager)
         self.mode = self.config.get("mode", "ttt")
         self.delay = float(self.config.get("delay", 0.1))
         self.stream_chunk_delay = float(self.config.get("stream_chunk_delay", 0.05))
         self.requires_gpu = bool(self.config.get("requires_gpu", False))
         self.load_delay = float(self.config.get("load_delay", 0.5))
+        self.context_size = int(self.config.get("context_size", 4096))
+        self.max_output_tokens = int(self.config.get("max_output_tokens", 1024))
         logger.info(f"Initialized DummyBinding: Name='{self.binding_name}', Mode='{self.mode}', GPU={self.requires_gpu}")
 
     async def list_available_models(self) -> List[Dict[str, Any]]:
@@ -44,16 +51,15 @@ class DummyBinding(Binding):
         is_vision = self.mode in ['tti', 'i2i']
         is_audio = self.mode in ['tts', 'ttm', 'stt', 'audio2audio']
         return [
-            { "name": self.config.get("model", f"dummy_{self.mode}_model"), "size": 500*1024*1024, "modified_at": now - timedelta(days=1), "quantization_level": "Q_DUMMY", "format": "dummy", "family": "dummy", "context_size": 4096, "max_output_tokens": 1024, "supports_vision": is_vision, "supports_audio": is_audio, "details": {"info": f"Simulated model for mode {self.mode}"} },
+            { "name": self.config.get("model", f"dummy_{self.mode}_model"), "size": 500*1024*1024, "modified_at": now - timedelta(days=1), "quantization_level": "Q_DUMMY", "format": "dummy", "family": "dummy", "context_size": self.context_size, "max_output_tokens": self.max_output_tokens, "supports_vision": is_vision, "supports_audio": is_audio, "details": {"info": f"Simulated model for mode {self.mode}"} },
             { "name": "another_dummy", "size": 1000*1024*1024, "modified_at": now - timedelta(hours=5), "quantization_level": "F_DUMMY", "format": "dummy", "family": "dummy", "context_size": 8192, "max_output_tokens": 2048, "supports_vision": False, "supports_audio": False, "details": {"info": "Another simulated model"} }
         ]
 
     @classmethod
     def get_binding_config(cls) -> Dict[str, Any]:
         """Returns metadata about the Dummy binding."""
-        return { "type_name": cls.binding_type_name, "version": "1.1", "description": "Dummy binding for testing.", "supports_streaming": True, "config_template": { "type": cls.binding_type_name, "mode": "ttt", "delay": 0.1, "requires_gpu": False, "load_delay": 0.5 } }
+        return { "type_name": cls.binding_type_name, "version": "1.2", "description": "Dummy binding for testing.", "supports_streaming": True, "config_template": { "type": cls.binding_type_name, "mode": "ttt", "delay": 0.1, "requires_gpu": False, "load_delay": 0.5, "context_size": 4096, "max_output_tokens": 1024 } }
 
-    # --- IMPLEMENTED CAPABILITIES ---
     def get_supported_input_modalities(self) -> List[str]:
         """Returns supported input types based on mode."""
         if self.mode in ['tti', 'i2i']: return ['text', 'image']
@@ -66,7 +72,6 @@ class DummyBinding(Binding):
         if self.mode in ['tts', 'ttm', 'audio2audio']: return ['audio']
         if self.mode in ['ttv']: return ['video']
         return ['text']
-    # --- END IMPLEMENTED CAPABILITIES ---
 
     def get_resource_requirements(self, model_name: Optional[str] = None) -> Dict[str, Any]:
         """Return simulated resource requirements."""
@@ -97,22 +102,22 @@ class DummyBinding(Binding):
         """Simulates generation based on the configured mode."""
         if not self._model_loaded: raise RuntimeError("Model not loaded")
         logger.info(f"Dummy '{self.binding_name}': Simulating gen for prompt: '{prompt[:50]}...' (Mode: {self.mode})")
-        if multimodal_data: logger.info(f"Dummy '{self.binding_name}': Received {len(multimodal_data)} multimodal items.") # Log received data
+        if multimodal_data: logger.info(f"Dummy '{self.binding_name}': Received {len(multimodal_data)} multimodal items.")
 
-        await asyncio.sleep(self.delay) # Simulate generation time
+        await asyncio.sleep(self.delay)
 
-        output_type = self.get_supported_output_modalities()[0] # Get primary output type
+        output_type = self.get_supported_output_modalities()[0]
 
         if output_type == "text":
             max_tokens = params.get("max_tokens", 50); response_text = f"Dummy response to '{prompt[:20]}...' (model {self.model_name}). " * (max_tokens // 10)
-            return {"text": response_text[:max_tokens]} # Return consistent dict
+            return {"text": response_text[:max_tokens]}
         elif output_type == "image":
             width = params.get("width", 256); height = params.get("height", 256); img_b64 = generate_dummy_image_base64(width, height)
             return {"image_base64": img_b64, "mime_type": "image/png", "prompt_used": prompt, "model": self.model_name}
         elif output_type == "audio":
             aud_b64 = generate_dummy_audio_base64(); return {"audio_base64": aud_b64, "mime_type": "audio/wav", "prompt_used": prompt, "model": self.model_name}
         elif output_type == "video":
-            return {"video_base64": "", "mime_type": "video/mp4", "prompt_used": prompt, "model": self.model_name} # Placeholder
+            return {"video_base64": "", "mime_type": "video/mp4", "prompt_used": prompt, "model": self.model_name}
         else:
             return {"error": f"Unknown output mode '{self.mode}' for DummyBinding"}
 
@@ -122,13 +127,13 @@ class DummyBinding(Binding):
         if multimodal_data: logger.info(f"Dummy '{self.binding_name}' (stream): Received {len(multimodal_data)} multimodal items.")
 
         output_type = self.get_supported_output_modalities()[0]
-        if output_type not in ["text", "audio"]: # Only simulate stream for text/audio
+        if output_type not in ["text", "audio"]:
             logger.warning(f"Dummy stream called in non-streamable mode ({self.mode}). Simulating non-stream.")
             result = await self.generate(prompt, params, request_info, multimodal_data)
             yield {"type": "final", "content": result, "metadata": {"binding": self.binding_name}}; return
 
         logger.info(f"Dummy '{self.binding_name}': Simulating stream (Mode: {self.mode}) for prompt: '{prompt[:50]}...'")
-        full_response_content: Union[str, Dict] = "" # Adjusted type
+        full_response_content: Union[str, Dict] = ""
 
         if output_type == "text":
             max_tokens = params.get("max_tokens", 50); words = [f"word{i}" for i in range(max_tokens)]
@@ -136,17 +141,48 @@ class DummyBinding(Binding):
             for i, word in enumerate(words):
                 await asyncio.sleep(self.stream_chunk_delay); chunk_content = word + (" " if i < len(words) - 1 else ""); text_accumulator += chunk_content
                 yield {"type": "chunk", "content": chunk_content, "metadata": {"index": i}}
-            full_response_content = {"text": text_accumulator} # Final content is dict
+            full_response_content = {"text": text_accumulator}
             yield {"type": "final", "content": full_response_content, "metadata": {"total_words": len(words)}}
         elif output_type == "audio":
              audio_data = generate_dummy_audio_base64()
-             # Simulate audio stream: send metadata first, then data, then final
-             yield {"type": "info", "content": {"mime_type": "audio/wav", "status": "starting"}} # Example info chunk
+             yield {"type": "info", "content": {"mime_type": "audio/wav", "status": "starting"}}
              await asyncio.sleep(self.stream_chunk_delay)
-             yield {"type": "chunk", "content": {"audio_chunk_base64": audio_data[:len(audio_data)//2] }} # Example data chunk
+             yield {"type": "chunk", "content": {"audio_chunk_base64": audio_data[:len(audio_data)//2] }}
              await asyncio.sleep(self.stream_chunk_delay)
              yield {"type": "chunk", "content": {"audio_chunk_base64": audio_data[len(audio_data)//2:] }}
-             full_response_content = {"audio_base64": audio_data, "mime_type": "audio/wav"} # Final content dict
+             full_response_content = {"audio_base64": audio_data, "mime_type": "audio/wav"}
              yield {"type": "final", "content": full_response_content, "metadata": {"prompt_used": prompt}}
 
         logger.info(f"Dummy Binding '{self.binding_name}': Stream finished.")
+
+    # --- NEW: Tokenizer / Info ---
+    async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
+        """Simulates tokenization by assigning random IDs to words."""
+        if not self._model_loaded: raise RuntimeError("Model not loaded for tokenization")
+        logger.info(f"Dummy '{self.binding_name}': Simulating tokenize for '{text[:50]}...'")
+        words = text.split(); tokens = [random.randint(1000, 30000) for _ in words]
+        if add_bos: tokens.insert(0, 1) # Simulate BOS token
+        if add_eos: tokens.append(2)    # Simulate EOS token
+        return tokens
+
+    async def detokenize(self, tokens: List[int]) -> str:
+        """Simulates detokenization."""
+        if not self._model_loaded: raise RuntimeError("Model not loaded for detokenization")
+        logger.info(f"Dummy '{self.binding_name}': Simulating detokenize for {len(tokens)} tokens.")
+        # Ignore BOS/EOS simulation
+        words = [f"word{i+1}" for i, token in enumerate(tokens) if token > 2]
+        return " ".join(words)
+
+    async def get_current_model_info(self) -> Dict[str, Any]:
+        """Returns dummy info for the loaded model."""
+        if not self._model_loaded: return {}
+        is_vision = self.mode in ['tti', 'i2i']
+        is_audio = self.mode in ['tts', 'ttm', 'stt', 'audio2audio']
+        return {
+            "name": self.model_name,
+            "context_size": self.context_size,
+            "max_output_tokens": self.max_output_tokens,
+            "supports_vision": is_vision,
+            "supports_audio": is_audio,
+            "details": {"dummy_info": f"Currently loaded dummy for mode {self.mode}"}
+        }
