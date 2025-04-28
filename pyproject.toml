@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -21,7 +21,7 @@ classifiers = [
     "Development Status :: 3 - Alpha", # Start with Alpha or Beta
 ]
 dependencies = [
-    "ascii_colors>=0.8.0",
+    "ascii_colors>=0.10.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.23.0",
     "pydantic>=2.0.0",

@@ -375,6 +375,8 @@ async def lollms_chat(interaction: discord.Interaction, prompt: str):
         log_error(f"Unexpected type from API: {type(result)}")
         reply_status_emoji = "❌"
 
+    # Now we have the emoji and display name determined
+    reply_prefix = f"👤 **{interaction.user.display_name}:** {prompt}\n\n{reply_status_emoji} **({ai_display_name}) AI:**"
     # --- Construct and Send Multi-Part Reply ---
     base_prefix = f"👤 **{interaction.user.display_name}:** {prompt}\n\n{reply_status_emoji} **({ai_display_name}) AI:**"
     message_parts_to_send: List[Union[str, discord.File]] = []
@@ -551,6 +553,50 @@ async def lollms_imagine(interaction: discord.Interaction, prompt: str):
             except OSError as e: log_error(f"Error deleting temp image {tmp_file_path}: {e}")
 
 # --- Settings Select Menu Helper ---
+async def create_classic_select_menu( interaction_or_ctx: Union[discord.Interaction], setting_type: str, fetch_endpoint: str, current_value: Optional[str], list_json_key: Optional[str], display_key: str = 'name', value_key: str = 'name', is_dict_list: bool = True, allow_none: bool = True, none_display_text: str = "Use Server Default", on_complete_callback: Optional[Callable[[discord.Interaction, Optional[str]], Coroutine[Any, Any, None]]] = None ) -> Optional[ui.View]:
+    """Creates a Discord Select menu view for settings."""
+    log_system(f"Creating select menu for: {setting_type}")
+    options_data = await make_api_call_async(fetch_endpoint)
+    items = []
+    if options_data:
+        if list_json_key:
+            raw_list_data = options_data.get(list_json_key)
+            if is_dict_list and isinstance(raw_list_data, dict): items = list(raw_list_data.values())
+            elif not is_dict_list and isinstance(raw_list_data, dict): items = list(raw_list_data.keys())
+            elif isinstance(raw_list_data, list): items = raw_list_data
+        elif isinstance(options_data, list): items = options_data
+        else: log_warning(f"Unexpected API response for {setting_type}.")
+    if not items and not allow_none: log_warning(f"No items for {setting_type}, menu cannot be created."); return None
+    select_options: List[SelectOption] = []
+    if allow_none: select_options.append(SelectOption(label=none_display_text, value="__NONE__", default=current_value is None))
+    for item in items:
+        label = None; value = None
+        if is_dict_list and isinstance(item, dict): label = item.get(display_key); value = item.get(value_key)
+        elif isinstance(item, str): label = item; value = item
+        if label and value: select_options.append(SelectOption(label=label[:100], value=value[:100], default=value == current_value))
+    if not select_options: log_warning(f"No valid options for {setting_type}"); return None
+    if len(select_options)>25: log_warning("Truncating options to 25."); select_options = select_options[:25]
+
+    class SettingsSelect(ui.Select):
+        def __init__(self): super().__init__(placeholder=f'Select {setting_type}...', min_values=1, max_values=1, options=select_options)
+        async def callback(self, interaction: discord.Interaction):
+            selected_value = self.values[0]; final_value = None if selected_value == "__NONE__" else selected_value
+            log_system(f"{setting_type} selected: {final_value}")
+            global current_personality, current_ttt_binding, current_ttt_model, current_tti_binding, current_tti_model
+            updated = False
+            if setting_type == "Personality": current_personality = final_value; updated = True
+            elif setting_type == "TTT Binding":
+                if current_ttt_binding != final_value: current_ttt_binding = final_value; current_ttt_model = None; updated = True
+            elif setting_type == "TTT Model": current_ttt_model = final_value; updated = True
+            elif setting_type == "TTI Binding":
+                if current_tti_binding != final_value: current_tti_binding = final_value; current_tti_model = None; updated = True
+            elif setting_type == "TTI Model": current_tti_model = final_value; updated = True
+            if updated: save_operational_settings(get_current_operational_settings())
+            await interaction.response.edit_message(content=f"✅ {setting_type} set to: `{final_value or none_display_text}`", view=None)
+            if on_complete_callback: await on_complete_callback(interaction, final_value)
+
+    view = ui.View(timeout=180); view.add_item(SettingsSelect()); return view
+
 async def create_select_menu(
     interaction_or_ctx: Union[discord.Interaction],
     setting_type: str,
@@ -723,33 +769,33 @@ async def run_initial_setup_wizard(interaction: discord.Interaction):
 
 async def setup_step_personality(interaction: discord.Interaction):
     """Setup Step 1: Select Personality."""
-    view = await create_select_menu(interaction, "Personality", "/list_personalities", None, 'personalities', is_dict_list=True, allow_none=True, none_display_text="None (No Personality)", on_complete_callback=setup_step_ttt_binding)
+    view = await create_classic_select_menu(interaction, "Personality", "/list_personalities", None, 'personalities', is_dict_list=True, allow_none=True, none_display_text="None (No Personality)", on_complete_callback=setup_step_ttt_binding)
     if view: await interaction.followup.send("Step 1: Select Personality:", view=view, ephemeral=True)
     else: await interaction.followup.send("❌ Error creating personality menu.", ephemeral=True)
 
 async def setup_step_ttt_binding(interaction: discord.Interaction, _selected_personality: Optional[str]):
     """Setup Step 2: Select TTT Binding."""
-    view = await create_select_menu(interaction, "TTT Binding", "/list_bindings", None, 'binding_instances', is_dict_list=False, allow_none=True, none_display_text="Server Default", on_complete_callback=setup_step_ttt_model)
+    view = await create_classic_select_menu(interaction, "TTT Binding", "/list_bindings", None, 'binding_instances', is_dict_list=False, allow_none=True, none_display_text="Server Default", on_complete_callback=setup_step_ttt_model)
     if view: await interaction.followup.send("Step 2: Select TTT Binding:", view=view, ephemeral=True)
     else: await interaction.followup.send("❌ Error creating TTT binding menu.", ephemeral=True)
 
 async def setup_step_ttt_model(interaction: discord.Interaction, selected_ttt_binding: Optional[str]):
     """Setup Step 3: Select TTT Model."""
     if not selected_ttt_binding: await setup_step_tti_binding(interaction, None); return
-    view = await create_select_menu(interaction, "TTT Model", f"/list_available_models/{selected_ttt_binding}", None, 'models', is_dict_list=True, allow_none=True, none_display_text=f"Default for '{selected_ttt_binding}'", on_complete_callback=setup_step_tti_binding)
+    view = await create_classic_select_menu(interaction, "TTT Model", f"/list_available_models/{selected_ttt_binding}", None, 'models', is_dict_list=True, allow_none=True, none_display_text=f"Default for '{selected_ttt_binding}'", on_complete_callback=setup_step_tti_binding)
     if view: await interaction.followup.send(f"Step 3: Select TTT Model for `{selected_ttt_binding}`:", view=view, ephemeral=True)
     else: await interaction.followup.send("❌ Error TTT model menu.", ephemeral=True); await setup_step_tti_binding(interaction, None)
 
 async def setup_step_tti_binding(interaction: discord.Interaction, _selected_ttt_model: Optional[str]):
     """Setup Step 4: Select TTI Binding."""
-    view = await create_select_menu(interaction, "TTI Binding", "/list_bindings", None, 'binding_instances', is_dict_list=False, allow_none=True, none_display_text="Server Default", on_complete_callback=setup_step_tti_model)
+    view = await create_classic_select_menu(interaction, "TTI Binding", "/list_bindings", None, 'binding_instances', is_dict_list=False, allow_none=True, none_display_text="Server Default", on_complete_callback=setup_step_tti_model)
     if view: await interaction.followup.send("Step 4: Select TTI Binding:", view=view, ephemeral=True)
     else: await interaction.followup.send("❌ Error creating TTI binding menu.", ephemeral=True); await finish_setup(interaction, None) # Proceed even on error
 
 async def setup_step_tti_model(interaction: discord.Interaction, selected_tti_binding: Optional[str]):
     """Setup Step 5: Select TTI Model."""
     if not selected_tti_binding: await finish_setup(interaction, None); return
-    view = await create_select_menu(interaction, "TTI Model", f"/list_available_models/{selected_tti_binding}", None, 'models', is_dict_list=True, allow_none=True, none_display_text=f"Default for '{selected_tti_binding}'", on_complete_callback=finish_setup)
+    view = await create_classic_select_menu(interaction, "TTI Model", f"/list_available_models/{selected_tti_binding}", None, 'models', is_dict_list=True, allow_none=True, none_display_text=f"Default for '{selected_tti_binding}'", on_complete_callback=finish_setup)
     if view: await interaction.followup.send(f"Step 5: Select TTI Model for `{selected_tti_binding}`:", view=view, ephemeral=True)
     else: await interaction.followup.send("❌ Error TTI model menu.", ephemeral=True); await finish_setup(interaction, None)
 
@@ -787,7 +833,7 @@ async def set_personality(interaction: discord.Interaction):
     """Allows setting the personality."""
     if initial_settings_setup_needed: await interaction.response.send_message("Run `/lollms_settings setup` first.", ephemeral=True); return
     await interaction.response.defer(ephemeral=True)
-    view = await create_select_menu(interaction, "Personality", "/list_personalities", current_personality, 'personalities', is_dict_list=True, allow_none=True, none_display_text="None (No Personality)")
+    view = await create_classic_select_menu(interaction, "Personality", "/list_personalities", current_personality, 'personalities', is_dict_list=True, allow_none=True, none_display_text="None (No Personality)")
     if view: await interaction.followup.send("Choose personality:", view=view, ephemeral=True)
     else: await interaction.followup.send("Could not create menu.", ephemeral=True)
 
@@ -797,7 +843,7 @@ async def set_ttt_binding(interaction: discord.Interaction):
     """Allows setting the TTT binding."""
     if initial_settings_setup_needed: await interaction.response.send_message("Run `/lollms_settings setup` first.", ephemeral=True); return
     await interaction.response.defer(ephemeral=True)
-    view = await create_select_menu(interaction, "TTT Binding", "/list_bindings", current_ttt_binding, 'binding_instances', is_dict_list=False, allow_none=True, none_display_text="Server Default")
+    view = await create_classic_select_menu(interaction, "TTT Binding", "/list_bindings", current_ttt_binding, 'binding_instances', is_dict_list=False, allow_none=True, none_display_text="Server Default")
     if view: await interaction.followup.send("Choose TTT binding:", view=view, ephemeral=True)
     else: await interaction.followup.send("Could not create menu.", ephemeral=True)
 
@@ -808,7 +854,7 @@ async def set_ttt_model(interaction: discord.Interaction):
     if initial_settings_setup_needed: await interaction.response.send_message("Run `/lollms_settings setup` first.", ephemeral=True); return
     await interaction.response.defer(ephemeral=True)
     if not current_ttt_binding: await interaction.followup.send("❌ Select TTT Binding first.", ephemeral=True); return
-    view = await create_select_menu(interaction, "TTT Model", f"/list_available_models/{current_ttt_binding}", current_ttt_model, 'models', is_dict_list=True, allow_none=True, none_display_text=f"Default for '{current_ttt_binding}'")
+    view = await create_classic_select_menu(interaction, "TTT Model", f"/list_available_models/{current_ttt_binding}", current_ttt_model, 'models', is_dict_list=True, allow_none=True, none_display_text=f"Default for '{current_ttt_binding}'")
     if view: await interaction.followup.send(f"Choose TTT model for `{current_ttt_binding}`:", view=view, ephemeral=True)
     else: await interaction.followup.send("Could not create menu.", ephemeral=True)
 
@@ -874,7 +920,7 @@ async def set_tti_model(interaction: discord.Interaction):
     # --- FIX: Use current_tti_binding in the endpoint URL ---
     api_endpoint = f"/list_available_models/{current_tti_binding}"
 
-    view = await create_select_menu(
+    view = await create_classic_select_menu(
         interaction,
         "TTI Model",
         api_endpoint, # Use the corrected endpoint

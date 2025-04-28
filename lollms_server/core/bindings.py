@@ -15,8 +15,8 @@ from .resource_manager import ResourceManager
 from lollms_server.utils.helpers import extract_code_blocks
 
 # --- IMPORT: InputData from api.models ---
+# Use TYPE_CHECKING to avoid circular import errors at runtime if InputData needs Binding later
 try:
-    # Use TYPE_CHECKING to avoid circular import errors at runtime if InputData needs Binding later
     from typing import TYPE_CHECKING
     if TYPE_CHECKING:
         from lollms_server.api.models import InputData
@@ -254,7 +254,7 @@ class Binding(ABC):
         yield {"type": "final", "content": final_output_list, "metadata": {}}
         return
 
-    # --- NEW: Tokenization / Detokenization / Info Methods ---
+    # --- Tokenization / Detokenization / Info Methods ---
     async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
         """
         Tokenizes the given text using the currently loaded model's tokenizer.
@@ -263,7 +263,6 @@ class Binding(ABC):
         logger.warning(f"Tokenization requested but not implemented for binding type '{self.binding_type_name}'.")
         raise NotImplementedError(f"Binding type '{self.binding_type_name}' does not support tokenization.")
 
-    # @abstractmethod # REMOVED
     async def detokenize(self, tokens: List[int]) -> str:
         """
         Detokenizes a list of token IDs back into text using the currently loaded model.
@@ -283,8 +282,9 @@ class Binding(ABC):
             Returns an empty dict or dict with None values if no model is loaded.
         """
         pass
-    # --- END NEW METHODS ---
+    # --- END Tokenization/Info Methods ---
 
+    # --- Resource Requirements and Helper Methods ---
     def get_resource_requirements(self, model_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Estimates resource requirements (e.g., GPU needed).
@@ -295,7 +295,8 @@ class Binding(ABC):
         Returns:
             A dictionary indicating resource needs (e.g., {"gpu_required": True}).
         """
-        return {"gpu_required": True, "estimated_vram_mb": 1024} # Default estimate
+        # Default estimate, subclasses should override if they can provide better info
+        return {"gpu_required": True, "estimated_vram_mb": 1024}
 
     @property
     def is_model_loaded(self) -> bool:
@@ -344,12 +345,15 @@ class Binding(ABC):
                 multimodal_data=multimodal_data
             )
 
-            # --- Extract text from potential dict response ---
+            # --- Extract text from potential dict/list response ---
             response_text = ""
             if isinstance(llm_response, dict) and "text" in llm_response:
                 response_text = llm_response["text"]
             elif isinstance(llm_response, str):
                 response_text = llm_response
+            elif isinstance(llm_response, list): # Handle list output
+                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text']
+                response_text = "\n".join(text_items)
             else:
                  logger.warning(f"generate_structured_output received unexpected response type: {type(llm_response)}. Trying string conversion.")
                  response_text = str(llm_response)
@@ -378,6 +382,13 @@ class Binding(ABC):
 
             if output_language_tag.lower() == "json":
                 try:
+                    # Attempt to remove potential ```json markdown fences if they were included
+                    # json_content_cleaned = extracted_content.strip()
+                    # if json_content_cleaned.startswith("```json"):
+                    #     json_content_cleaned = json_content_cleaned[len("```json"):].strip()
+                    # if json_content_cleaned.endswith("```"):
+                    #     json_content_cleaned = json_content_cleaned[:-len("```")].strip()
+
                     parsed_json = json.loads(extracted_content)
                     logger.debug("Successfully extracted and parsed JSON from first matching block.")
                     return parsed_json
@@ -413,12 +424,15 @@ class Binding(ABC):
                 request_info=request_info,
                 multimodal_data=multimodal_data
             )
-            # --- Extract text from potential dict response ---
+            # --- Extract text from potential dict/list response ---
             response_text = ""
             if isinstance(llm_response, dict) and "text" in llm_response:
                 response_text = llm_response["text"]
             elif isinstance(llm_response, str):
                 response_text = llm_response
+            elif isinstance(llm_response, list):
+                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text']
+                response_text = "\n".join(text_items)
             else:
                  logger.warning(f"generate_and_extract_all_codes received unexpected response type: {type(llm_response)}. Trying string conversion.")
                  response_text = str(llm_response)
@@ -466,12 +480,15 @@ class Binding(ABC):
                 request_info=request_info,
                 multimodal_data=multimodal_data
             )
-            # --- Extract text from potential dict response ---
+            # --- Extract text from potential dict/list response ---
             response_text = ""
             if isinstance(llm_response, dict) and "text" in llm_response:
                 response_text = llm_response["text"]
             elif isinstance(llm_response, str):
                 response_text = llm_response
+            elif isinstance(llm_response, list):
+                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text']
+                response_text = "\n".join(text_items)
             else:
                  logger.warning(f"ask_yes_no received unexpected response type: {type(llm_response)}. Trying string conversion.")
                  response_text = str(llm_response)
@@ -481,26 +498,31 @@ class Binding(ABC):
             answer_block = None
             for block in code_blocks:
                  block_type = block.get('type', 'unknown').lower()
+                 # Allow unknown type as well, as LLM might forget the 'text' tag
                  if block_type in ['text', 'unknown']:
                       answer_block = block
                       break
 
             if answer_block is None:
-                 logger.warning(f"Could not find ```text block in yes/no response. Response:\n{response_text}")
-                 return None
+                 logger.warning(f"Could not find ```text or ``` block in yes/no response. Response:\n{response_text}")
+                 # Attempt to parse directly if no block found
+                 direct_answer = response_text.strip().lower()
+                 if direct_answer == "yes": logger.debug("Parsed yes/no directly: YES"); return True
+                 elif direct_answer == "no": logger.debug("Parsed yes/no directly: NO"); return False
+                 return None # Could not determine from direct text either
 
             if not answer_block.get('is_complete', True):
                 logger.warning("Extracted yes/no answer block might be incomplete.")
 
             answer = answer_block.get('content', '').strip().lower()
             if answer == "yes":
-                logger.debug("Parsed yes/no answer: YES")
+                logger.debug("Parsed yes/no answer from block: YES")
                 return True
             elif answer == "no":
-                logger.debug("Parsed yes/no answer: NO")
+                logger.debug("Parsed yes/no answer from block: NO")
                 return False
             else:
-                logger.warning(f"LLM answer in text block was not 'yes' or 'no': '{answer}'. Raw block content: '{answer_block.get('content')}'")
+                logger.warning(f"LLM answer in block was not 'yes' or 'no': '{answer}'. Raw block content: '{answer_block.get('content')}'")
                 return None
 
         except Exception as e:
@@ -509,134 +531,147 @@ class Binding(ABC):
     # --- END Structured Output Helpers ---
 
 
-# --- Binding Manager (unchanged) ---
+# --- Binding Manager ---
+
 class BindingManager:
-    """Discovers, loads, and manages available binding types and instances."""
+    """Loads and manages binding instances ONLY as defined in the configuration."""
 
     def __init__(self, config: AppConfig, resource_manager: ResourceManager):
         self.config = config
         self.resource_manager = resource_manager
+        # Stores the CLASS for successfully loaded binding types {type_name: BindingClass}
         self._binding_classes: Dict[str, Type[Binding]] = {}
+        # Stores successfully instantiated binding instances {logical_name: BindingInstance}
         self._binding_instances: Dict[str, Binding] = {}
-        self._discovery_errors: Dict[str, str] = {}
-        self._instantiation_errors: Dict[str, str] = {}
+        # Stores errors encountered during loading/instantiation {logical_name or type_name: error_message}
+        self._load_errors: Dict[str, str] = {}
+
+    def _find_binding_file(self, binding_type: str) -> Optional[Tuple[Path, Path]]:
+        """
+        Searches for the Python file corresponding to the binding type.
+        Prioritizes personal_bindings_folder over example_bindings_folder.
+
+        Returns:
+            A tuple (file_path, package_path) or None if not found.
+        """
+        filename = f"{binding_type}.py"
+        search_folders = []
+
+        # Prioritize personal folder
+        personal_folder = self.config.paths.bindings_folder
+        if personal_folder and personal_folder.is_dir():
+            search_folders.append(personal_folder)
+            add_path_to_sys_path(personal_folder.parent) # Ensure parent is searchable
+
+        # Fallback to example folder
+        example_folder = self.config.paths.example_bindings_folder
+        if example_folder and example_folder.is_dir():
+            if not personal_folder or personal_folder.resolve() != example_folder.resolve(): # Avoid adding same path twice
+                search_folders.append(example_folder)
+                add_path_to_sys_path(example_folder.parent) # Ensure parent is searchable
+
+        for folder in search_folders:
+            potential_path = folder / filename
+            if potential_path.is_file():
+                logger.debug(f"Found binding file for type '{binding_type}' at: {potential_path}")
+                # The package path is the folder itself (e.g., 'bindings')
+                return potential_path, folder
+        logger.warning(f"Could not find binding file '{filename}' in configured folders: {search_folders}")
+        return None
 
     async def load_bindings(self):
-        """Discovers binding classes and instantiates configured bindings."""
-        logger.info("Discovering binding classes...")
-        self._binding_classes = {} # Reset
-        self._discovery_errors = {} # Reset
+        """
+        Loads and instantiates binding instances based SOLELY on the config.toml [bindings] section.
+        """
+        logger.info("Loading configured bindings...")
+        self._binding_classes = {}  # Reset loaded classes
+        self._binding_instances = {} # Reset instances
+        self._load_errors = {}      # Reset errors
 
-        binding_folders = []
-        if self.config.paths.example_bindings_folder and self.config.paths.example_bindings_folder.exists():
-                binding_folders.append(self.config.paths.example_bindings_folder)
-                add_path_to_sys_path(self.config.paths.example_bindings_folder.parent)
-        if self.config.paths.bindings_folder and self.config.paths.bindings_folder.exists():
-                binding_folders.append(self.config.paths.bindings_folder)
-                add_path_to_sys_path(self.config.paths.bindings_folder.parent)
-
-        if not binding_folders:
-            logger.warning("No binding folders configured or found.")
+        if not self.config.bindings:
+            logger.warning("No bindings defined in config.toml [bindings] section.")
             return
-
-        for folder in binding_folders:
-            logger.info(f"Scanning for bindings in: {folder}")
-            for file_path in folder.glob("*.py"):
-                if file_path.name == "__init__.py":
-                    continue
-                module, error = safe_load_module(file_path, package_path=folder)
-                if module:
-                    found_classes = find_classes_in_module(module, Binding)
-                    for binding_class in found_classes:
-                        try:
-                            type_name = getattr(binding_class, 'binding_type_name', None)
-                            if not type_name or type_name == "base_binding":
-                                 class_config = binding_class.get_binding_config()
-                                 type_name = class_config.get("type_name") # Fallback to config
-                                 if not type_name:
-                                     type_name = file_path.stem # Fallback to filename
-                                     logger.warning(f"Binding class {binding_class.__name__} in {file_path} does not define 'binding_type_name' attribute or 'type_name' in get_binding_config(). Falling back to filename '{type_name}'.")
-
-                            if type_name in self._binding_classes:
-                                logger.warning(f"Duplicate binding type name '{type_name}' found. Overwriting with class from {file_path}.")
-                            self._binding_classes[type_name] = binding_class
-                            logger.info(f"Discovered binding type: '{type_name}' from class {binding_class.__name__}")
-                        except Exception as e:
-                            err_msg = f"Error processing class {binding_class.__name__} in {file_path}: {e}"
-                            logger.error(err_msg)
-                            self._discovery_errors[str(file_path)] = err_msg
-                elif error:
-                    self._discovery_errors[str(file_path)] = error
-
-        logger.info(f"Found {len(self._binding_classes)} binding types.")
-        if self._discovery_errors:
-            logger.warning(f"Encountered errors during binding discovery: {self._discovery_errors}")
-
-        await self._instantiate_bindings()
-
-    async def _instantiate_bindings(self):
-        logger.info("Instantiating configured bindings...")
-        self._binding_instances = {} # Reset
-        self._instantiation_errors = {} # Reset
 
         for logical_name, instance_config in self.config.bindings.items():
             binding_type = instance_config.get("type")
             if not binding_type:
                 err_msg = f"Binding '{logical_name}' in config.toml is missing the required 'type' field."
-                logger.error(err_msg)
-                self._instantiation_errors[logical_name] = err_msg
-                continue
+                logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
 
-            BindingClass = self._binding_classes.get(binding_type)
+            # --- Find the specific binding file ---
+            find_result = self._find_binding_file(binding_type)
+            if not find_result:
+                 err_msg = f"Python file for binding type '{binding_type}' (for instance '{logical_name}') not found in configured folders."
+                 logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
+            file_path, package_path = find_result
+
+            # --- Load the specific module ---
+            module, error = safe_load_module(file_path, package_path=package_path)
+            if error or not module:
+                err_msg = f"Failed to load module '{file_path}' for binding type '{binding_type}' (instance '{logical_name}'): {error or 'Unknown module load error'}"
+                logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
+
+            # --- Find the specific Binding class within the module ---
+            found_classes = find_classes_in_module(module, Binding)
+            BindingClass: Optional[Type[Binding]] = None
+            for cls in found_classes:
+                # Check if the class explicitly defines the type_name we're looking for
+                if getattr(cls, 'binding_type_name', None) == binding_type:
+                    BindingClass = cls; break
+                # Fallback: Check the config returned by get_binding_config (less direct)
+                # try:
+                #     if cls.get_binding_config().get("type_name") == binding_type:
+                #         BindingClass = cls; break
+                # except Exception: pass # Ignore errors in get_binding_config here
+
             if not BindingClass:
-                err_msg = f"Binding type '{binding_type}' specified for '{logical_name}' not found or failed to load."
-                logger.error(err_msg)
-                self._instantiation_errors[logical_name] = err_msg
-                continue
+                 err_msg = f"Could not find Binding class with type_name '{binding_type}' inside module '{file_path}' (for instance '{logical_name}'). Found: {[c.__name__ for c in found_classes]}"
+                 logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
 
+            # --- Instantiate the binding ---
             try:
-                full_config = instance_config.copy()
-                full_config["binding_name"] = logical_name
+                logger.info(f"Instantiating binding '{logical_name}' (type: {binding_type}) from class {BindingClass.__name__}")
+                full_config = instance_config.copy(); full_config["binding_name"] = logical_name
                 instance = BindingClass(config=full_config, resource_manager=self.resource_manager)
 
+                # --- Perform Health Check ---
                 healthy, message = await instance.health_check()
                 if healthy:
-                    logger.info(f"Successfully instantiated binding '{logical_name}' (type: {binding_type}). Health check OK: {message}")
+                    logger.info(f"Successfully instantiated binding '{logical_name}'. Health check OK: {message}")
                     self._binding_instances[logical_name] = instance
+                    # Store the loaded class definition if not already stored
+                    if binding_type not in self._binding_classes:
+                         self._binding_classes[binding_type] = BindingClass
                 else:
                     err_msg = f"Health check failed for binding '{logical_name}' (type: {binding_type}): {message}"
-                    logger.error(err_msg)
-                    self._instantiation_errors[logical_name] = err_msg
+                    logger.error(err_msg); self._load_errors[logical_name] = err_msg
+                    # Optionally store the class even if health check failed? For now, don't store instance.
+                    # if binding_type not in self._binding_classes:
+                    #      self._binding_classes[binding_type] = BindingClass
 
             except Exception as e:
                 err_msg = f"Failed to instantiate binding '{logical_name}' (type: {binding_type}): {e}"
-                logger.error(err_msg, exc_info=True)
-                self._instantiation_errors[logical_name] = err_msg
+                logger.error(err_msg, exc_info=True); self._load_errors[logical_name] = err_msg
 
-        logger.info(f"Instantiated {len(self._binding_instances)} bindings.")
-        if self._instantiation_errors:
-            logger.warning(f"Encountered errors during binding instantiation: {self._instantiation_errors}")
+        logger.info(f"Finished loading bindings. Instantiated {len(self._binding_instances)} successfully.")
+        if self._load_errors:
+            logger.warning(f"Encountered errors during binding load/instantiation: {self._load_errors}")
 
     def list_binding_types(self) -> Dict[str, Dict[str, Any]]:
-        """Returns metadata for all discovered binding types."""
+        """Returns metadata for *successfully loaded* binding types based on config."""
         types_info = {}
-        for name, cls in self._binding_classes.items():
-            try:
-                types_info[name] = cls.get_binding_config()
-            except Exception as e:
-                logger.warning(f"Could not get config for binding type '{name}': {e}")
-                types_info[name] = {"error": "Failed to retrieve config"}
+        # Iterate through the classes that were loaded because they were configured
+        for type_name, cls in self._binding_classes.items():
+            try: types_info[type_name] = cls.get_binding_config()
+            except Exception as e: logger.warning(f"Could not get config for loaded binding type '{type_name}': {e}"); types_info[type_name] = {"error": "Failed to retrieve config"}
         return types_info
 
     def list_binding_instances(self) -> Dict[str, Dict[str, Any]]:
         """Returns the configuration for all successfully instantiated bindings."""
         instances_info = {}
         for name, instance in self._binding_instances.items():
-            try:
-                instances_info[name] = instance.get_instance_config()
-            except Exception as e:
-                logger.warning(f"Could not get config for binding instance '{name}': {e}")
-                instances_info[name] = {"error": "Failed to retrieve config"}
+            try: instances_info[name] = instance.get_instance_config()
+            except Exception as e: logger.warning(f"Could not get config for binding instance '{name}': {e}"); instances_info[name] = {"error": "Failed to retrieve config"}
         return instances_info
 
     def get_binding(self, logical_name: str) -> Optional[Binding]:
@@ -650,18 +685,19 @@ class BindingManager:
             The Binding instance, or None if not found or failed to load.
         """
         instance = self._binding_instances.get(logical_name)
-        if not instance:
-                logger.error(f"Binding instance '{logical_name}' not found or failed to instantiate.")
-                return None
+        if not instance: logger.error(f"Binding instance '{logical_name}' not found or failed to instantiate. Check config and startup logs.")
         return instance
 
     async def cleanup(self):
         """Cleans up resources used by bindings (e.g., unloads models)."""
         logger.info("Cleaning up binding instances...")
+        unload_tasks = []
         for name, instance in self._binding_instances.items():
-            try:
-                logger.info(f"Unloading model for binding instance '{name}'...")
-                await instance.unload_model()
-            except Exception as e:
-                logger.error(f"Error unloading model for binding '{name}': {e}", exc_info=True)
+            logger.info(f"Requesting model unload for binding instance '{name}'...")
+            unload_tasks.append(instance.unload_model()) # Gather async tasks
+
+        results = await asyncio.gather(*unload_tasks, return_exceptions=True)
+        for (name, instance), result in zip(self._binding_instances.items(), results):
+            if isinstance(result, Exception): logger.error(f"Error unloading model for binding '{name}': {result}", exc_info=result)
+            else: logger.info(f"Unload successful for '{name}'.")
         logger.info("Binding cleanup finished.")
