@@ -7,9 +7,9 @@ from typing import List, Tuple, Type, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-def add_path_to_sys_path(path: Path) -> None:
+def add_path_to_sys_path(path: Path|str) -> None:
     """Adds a given path to sys.path if not already present."""
-    abs_path = str(path.resolve())
+    abs_path = str(Path(path).resolve())
     if abs_path not in sys.path:
         sys.path.insert(0, abs_path)
         logger.debug(f"Added {abs_path} to sys.path")
