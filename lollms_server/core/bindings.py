@@ -1,703 +1,729 @@
-# lollms_server/core/bindings.py
+# encoding:utf-8
+# Project: lollms_server
+# File: lollms_server/core/bindings.py
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Manages AI model bindings, discovery, loading, and interaction, using ConfigGuard.
+
 import importlib
 import inspect
-from abc import ABC, abstractmethod
-from pathlib import Path
-import ascii_colors as logging
-from typing import List, Dict, Any, Type, Optional, AsyncGenerator, Tuple, Union
+import yaml
 import asyncio
 import json
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import List, Dict, Any, Type, Optional, AsyncGenerator, Tuple, Union, cast
 
-# Core components
-from .config import AppConfig
-from lollms_server.utils.file_utils import safe_load_module, find_classes_in_module, add_path_to_sys_path
-from .resource_manager import ResourceManager
+try:
+    import ascii_colors as logging # Use logging alias
+    from ascii_colors import ASCIIColors, trace_exception
+except ImportError:
+    import logging
+    class ASCIIColors: pass # type: ignore
+    def trace_exception(e): logging.exception(e)
+
+try:
+    from configguard import ConfigGuard, ValidationError
+    from configguard.exceptions import ConfigGuardError
+    # Import handlers to check dependencies if needed, though ConfigGuard does this
+    from configguard.handlers import JsonHandler, YamlHandler, TomlHandler, SqliteHandler
+except ImportError:
+    logging.critical("FATAL: ConfigGuard library not found.")
+    raise
+
+# Core components & Utils
+from lollms_server.core.config import get_config, get_binding_instances_config_path, get_encryption_key, get_server_root # Use updated config getters
+from lollms_server.core.resource_manager import ResourceManager
+from lollms_server.utils.file_utils import find_classes_in_module, add_path_to_sys_path, safe_load_module # Added safe_load_module
 from lollms_server.utils.helpers import extract_code_blocks
 
-# --- IMPORT: InputData from api.models ---
-# Use TYPE_CHECKING to avoid circular import errors at runtime if InputData needs Binding later
-try:
-    from typing import TYPE_CHECKING
-    if TYPE_CHECKING:
-        from lollms_server.api.models import InputData
-    else:
-        # If not type checking, import it but handle potential import error
-        try:
-            from lollms_server.api.models import InputData
-        except ImportError:
-            class InputData: pass # type: ignore # Define placeholder if import fails
-except ImportError:
-    # Fallback if TYPE_CHECKING itself fails? Unlikely but safe.
-    class InputData: pass # type: ignore
+# API Models for type hints (use TYPE_CHECKING)
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from lollms_server.api.models import InputData, OutputData, StreamChunk
 
 
 logger = logging.getLogger(__name__)
 
+# Maps file extensions to their corresponding ConfigGuard handler classes.
+_binding_handler_map: Dict[str, Type] = {
+    ".yaml": YamlHandler, ".yml": YamlHandler,
+    ".json": JsonHandler, ".toml": TomlHandler,
+    ".db": SqliteHandler, ".sqlite": SqliteHandler, ".sqlite3": SqliteHandler
+}
 # --- Binding Base Class ---
 
 class Binding(ABC):
     """Abstract Base Class for all generation bindings."""
 
-    binding_type_name: str = "base_binding"
+    binding_type_name: str = "base_binding" # Unique type name for the binding class
 
     def __init__(self, config: Dict[str, Any], resource_manager: ResourceManager):
         """
-        Initializes the binding.
+        Initializes the binding instance using the loaded instance configuration.
 
         Args:
-            config: The configuration dictionary for this binding instance.
+            config: The configuration dictionary loaded from the instance's config file.
+                    This dictionary is validated against the schema defined in the
+                    binding's binding_card.yaml.
             resource_manager: The shared resource manager instance.
         """
-        self.config = config
+        # Store the validated instance configuration dictionary
+        self.config: Dict[str, Any] = config
         self.resource_manager = resource_manager
-        self.binding_name = config.get("binding_name", "unknown_binding")
-        self.model_name: Optional[str] = None
+        # Extract the instance name which is injected by BindingManager during loading
+        self.binding_instance_name: str = config.get("binding_instance_name", "unknown_instance")
+
+        self.model_name: Optional[str] = None # Name of the model file/API identifier currently loaded
         self._model_loaded = False
-        self._load_lock = asyncio.Lock()
+        self._load_lock = asyncio.Lock() # Protects model loading/unloading state
 
-    @abstractmethod
-    async def list_available_models(self) -> List[Dict[str, Any]]:
-        """
-        Lists models available to this specific binding instance.
-
-        Contract: Must return List[Dict], each Dict MUST have 'name'.
-        SHOULD populate standardized keys (size, modified_at, format, family,
-        context_size, max_output_tokens, supports_vision, supports_audio).
-        Other info goes into 'details'.
-
-        Returns:
-            A list of dictionaries, each representing an available model.
-        """
-        pass
+        logger.debug(f"Base Binding initialized for instance '{self.binding_instance_name}' (Type: {self.binding_type_name})")
 
     @classmethod
-    @abstractmethod
-    def get_binding_config(cls) -> Dict[str, Any]:
+    def get_binding_package_path(cls) -> Optional[Path]:
+        """Finds the directory containing the binding's definition (__init__.py)."""
+        try:
+            # Find the file where the class `cls` is defined
+            module_file = inspect.getfile(cls)
+            # The directory containing __init__.py is the package path
+            package_dir = Path(module_file).parent.resolve() # Resolve to absolute path
+            if package_dir.is_dir():
+                 return package_dir
+            else:
+                logger.error(f"Determined package directory is not valid: {package_dir}")
+        except TypeError: # Built-in types etc.
+            logger.error(f"Could not determine file path for class {cls.__name__}")
+        except Exception as e:
+             logger.error(f"Error finding package path for {cls.__name__}: {e}")
+        return None
+
+    @classmethod
+    def get_binding_card(cls) -> Dict[str, Any]:
         """
-        Returns metadata about the binding class.
+        Loads and returns the metadata and schema from the binding's binding_card.yaml.
 
         Returns:
-            A dictionary containing binding metadata like type_name, requirements, etc.
+            A dictionary containing the binding card data, including the 'instance_schema'.
+            Returns an empty dict if the card cannot be found or loaded correctly.
         """
+        package_dir = cls.get_binding_package_path()
+        if not package_dir:
+            logger.error(f"Cannot locate package directory for binding class '{cls.__name__}'. Cannot load card.")
+            return {}
+
+        card_path = package_dir / "binding_card.yaml"
+        if not card_path.is_file():
+             logger.error(f"Binding card not found for class '{cls.__name__}' at expected path: {card_path}")
+             return {}
+
+        try:
+             with open(card_path, 'r', encoding='utf-8') as f:
+                 card_data = yaml.safe_load(f)
+             if not isinstance(card_data, dict):
+                 logger.error(f"Invalid format in binding card: {card_path}. Expected a dictionary.")
+                 return {}
+             # Ensure mandatory keys are present
+             if "type_name" not in card_data or "instance_schema" not in card_data:
+                 logger.error(f"Binding card {card_path} is missing 'type_name' or 'instance_schema'.")
+                 return {}
+             if not isinstance(card_data["instance_schema"], dict):
+                  logger.error(f"Binding card {card_path} has invalid 'instance_schema' (not a dictionary).")
+                  return {}
+             # Add the package path to the returned data for convenience (resolved absolute path)
+             card_data["package_path"] = package_dir
+             return card_data
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing YAML in binding card {card_path}: {e}")
+            return {}
+        except Exception as e:
+             logger.error(f"Error loading binding card {card_path}: {e}", exc_info=True)
+             return {}
+
+    # --- Abstract Methods (Must be implemented by subclasses) ---
+    @abstractmethod
+    async def list_available_models(self) -> List[Dict[str, Any]]:
+        """Lists models available to *this specific binding instance*."""
         pass
 
     @abstractmethod
     def get_supported_input_modalities(self) -> List[str]:
-        """
-        Returns a list of supported input data types (e.g., ['text', 'image']).
-
-        Returns:
-            List of supported input modality types.
-        """
+        """Returns a list of supported input data types (e.g., ['text', 'image'])."""
         pass
 
     @abstractmethod
     def get_supported_output_modalities(self) -> List[str]:
-        """
-        Returns a list of supported output data types (e.g., ['text', 'image', 'audio']).
-
-        Returns:
-            List of supported output modality types.
-        """
+        """Returns a list of supported output data types (e.g., ['text', 'image', 'audio'])."""
         pass
-
-    def supports_input_role(self, data_type: str, role: str) -> bool:
-        """
-        Checks if a specific type/role combination is supported.
-
-        Default implementation relies on the broader modality check.
-        Subclasses (like a diffusion binding) should override for roles like 'controlnet_image'.
-
-        Args:
-            data_type: The type of input data (e.g., 'image').
-            role: The role of the input data (e.g., 'controlnet_image').
-
-        Returns:
-            True if supported, False otherwise.
-        """
-        return data_type in self.get_supported_input_modalities()
-
-    def get_instance_config(self) -> Dict[str, Any]:
-        """
-        Returns the specific configuration for this binding instance.
-
-        Returns:
-            The configuration dictionary.
-        """
-        return self.config
-
-    async def health_check(self) -> Tuple[bool, str]:
-        """
-        Performs a health check on the binding (e.g., API connection).
-
-        Returns:
-            A tuple (is_healthy: bool, message: str).
-        """
-        return True, "Binding initialized. No specific health check implemented."
 
     @abstractmethod
     async def load_model(self, model_name: str) -> bool:
-        """
-        Loads the specified model into the binding.
-
-        Uses self.resource_manager if needed for resource acquisition (e.g., GPU).
-
-        Args:
-            model_name: The name of the model to load.
-
-        Returns:
-            True if loading was successful, False otherwise.
-        """
+        """Loads the specified model into the binding."""
         pass
 
     @abstractmethod
     async def unload_model(self) -> bool:
-        """
-        Unloads the currently loaded model, releasing resources.
-
-        Returns:
-            True if unloading was successful, False otherwise.
-        """
+        """Unloads the currently loaded model, releasing resources."""
         pass
 
     @abstractmethod
-    async def generate(
-        self,
-        prompt: str,
-        params: Dict[str, Any],
-        request_info: Dict[str, Any],
-        multimodal_data: Optional[List['InputData']] = None
-    ) -> Union[str, Dict[str, Any], List[Dict[str, Any]]]:
-        """
-        Generates output based on the prompt and optional multimodal data.
-        Assumes the model is loaded.
-
-        Args:
-            prompt: The primary text input.
-            params: Generation parameters.
-            request_info: Dictionary containing original request context (e.g., generation_type).
-            multimodal_data: List of validated non-text InputData objects relevant
-                             to this binding, prepared by process_generation_request.
-
-        Returns:
-            - For simple text output: A string.
-            - For single binary output (legacy/simple bindings): A dict (e.g., {"image_base64": ..., "mime_type": ...}).
-            - For potentially multiple outputs (preferred): A list of dicts, where each dict
-              should resemble the OutputData model structure (e.g.,
-              [{"type": "text", "data": "..."}, {"type": "image", "data": "b64", "mime_type": "...", "metadata": {...}}]).
-              The `process_generation_request` function will standardize single string/dict returns into the list format.
-        """
+    async def generate( self, prompt: str, params: Dict[str, Any], request_info: Dict[str, Any], multimodal_data: Optional[List['InputData']] = None ) -> Union[str, Dict[str, Any], List[Dict[str, Any]]]:
+        """Generates output based on the prompt and optional multimodal data."""
         pass
-
-    async def generate_stream(
-        self,
-        prompt: str,
-        params: Dict[str, Any],
-        request_info: Dict[str, Any],
-        multimodal_data: Optional[List['InputData']] = None
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Generates output as an asynchronous stream of chunks (standardized format).
-
-        Handles TTT streaming by default using the non-streaming generate method.
-        Bindings supporting native streaming (text, audio) should override this.
-
-        Args:
-            prompt: The primary text input.
-            params: Generation parameters.
-            request_info: Dictionary containing original request context.
-            multimodal_data: List of validated non-text InputData objects.
-
-        Yields:
-            Dictionaries matching the StreamChunk format (type, content, metadata).
-            - Individual chunks ('chunk', 'info', 'error') have content specific to that chunk.
-            - The **final** chunk ('final') MUST contain a list of dicts resembling
-              the OutputData model structure in its 'content' field, representing
-              all generated outputs for the request. E.g.,
-              `{"type": "final", "content": [{"type":"text", "data":"..."}, {"type":"image", "data":"b64..."}], "metadata": ...}`
-        """
-        logger.warning(f"Binding {self.binding_name} does not support native streaming or multimodal streaming simulation. Simulating using non-stream 'generate'.")
-        full_response = await self.generate(
-            prompt=prompt,
-            params=params,
-            request_info=request_info,
-            multimodal_data=multimodal_data
-        )
-
-        # Standardize the simulated final output
-        final_output_list = []
-        if isinstance(full_response, str):
-            final_output_list.append({"type": "text", "data": full_response})
-            # Simulate TTT stream chunk
-            yield {"type": "chunk", "content": full_response, "metadata": {}}
-        elif isinstance(full_response, dict):
-            # Attempt to map single dict to OutputData structure
-            if "text" in full_response:
-                final_output_list.append({"type": "text", "data": full_response["text"], "metadata": full_response.get("metadata", {})})
-            elif "image_base64" in full_response:
-                final_output_list.append({"type": "image", "data": full_response["image_base64"], "mime_type": full_response.get("mime_type"), "metadata": full_response.get("metadata", {})})
-            elif "audio_base64" in full_response:
-                 final_output_list.append({"type": "audio", "data": full_response["audio_base64"], "mime_type": full_response.get("mime_type"), "metadata": full_response.get("metadata", {})})
-            # Add more mappings as needed...
-            else: # Fallback for unknown dict structure
-                logger.warning(f"Simulated stream: Unknown dict structure from generate: {full_response.keys()}. Wrapping as json.")
-                final_output_list.append({"type": "json", "data": full_response})
-        elif isinstance(full_response, list):
-            # Assume it's already the correct list format
-            final_output_list = full_response
-        else:
-             logger.error(f"generate_stream simulation failed: generate returned unexpected type {type(full_response)}")
-             yield {"type": "error", "content": "Streaming simulation failed"}
-             return # Exit the generator
-
-        # Yield the standardized final chunk
-        yield {"type": "final", "content": final_output_list, "metadata": {}}
-        return
-
-    # --- Tokenization / Detokenization / Info Methods ---
-    async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
-        """
-        Tokenizes the given text using the currently loaded model's tokenizer.
-        (Optional: Bindings should implement this if they support tokenization).
-        """
-        logger.warning(f"Tokenization requested but not implemented for binding type '{self.binding_type_name}'.")
-        raise NotImplementedError(f"Binding type '{self.binding_type_name}' does not support tokenization.")
-
-    async def detokenize(self, tokens: List[int]) -> str:
-        """
-        Detokenizes a list of token IDs back into text using the currently loaded model.
-        (Optional: Bindings should implement this if they support detokenization).
-        """
-        logger.warning(f"Detokenization requested but not implemented for binding type '{self.binding_type_name}'.")
-        raise NotImplementedError(f"Binding type '{self.binding_type_name}' does not support detokenization.")
 
     @abstractmethod
     async def get_current_model_info(self) -> Dict[str, Any]:
-        """
-        Returns information about the currently loaded model.
-
-        Returns:
-            A dictionary containing details like name, context size, max output tokens, etc.
-            Keys should align with the ModelInfo Pydantic model where possible.
-            Returns an empty dict or dict with None values if no model is loaded.
-        """
+        """Returns information about the currently loaded model."""
         pass
-    # --- END Tokenization/Info Methods ---
-
-    # --- Resource Requirements and Helper Methods ---
-    def get_resource_requirements(self, model_name: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Estimates resource requirements (e.g., GPU needed).
-
-        Args:
-            model_name: Optional model name to estimate for.
-
-        Returns:
-            A dictionary indicating resource needs (e.g., {"gpu_required": True}).
-        """
-        # Default estimate, subclasses should override if they can provide better info
-        return {"gpu_required": True, "estimated_vram_mb": 1024}
 
     @property
-    def is_model_loaded(self) -> bool:
-        """Returns True if a model is currently loaded."""
+    def is_model_loaded(self)->bool:
+        """Returns True if a model is considered loaded by the binding."""
         return self._model_loaded
 
-    async def generate_structured_output(
-        self,
-        prompt: str,
-        structure_definition: str,
-        output_language_tag: str = "json",
-        params: Optional[Dict[str, Any]] = None,
-        request_info: Optional[Dict[str, Any]] = None,
-        multimodal_data: Optional[List['InputData']] = None,
-        system_message_prefix: str = "Follow these instructions precisely:\n"
-    ) -> Optional[Any]:
-        """
-        Generates text (potentially considering multimodal input) and attempts
-        to extract structured output (e.g., JSON).
-        """
+    # --- Optional Methods (Subclasses can override) ---
+    def supports_input_role(self, data_type: str, role: str) -> bool:
+        """Checks if a specific type/role combination is supported. Default implementation just checks type."""
+        return data_type in self.get_supported_input_modalities()
+
+    def get_instance_config(self) -> Dict[str, Any]:
+        """Returns the specific configuration dictionary for this binding instance."""
+        # Return a copy to prevent external modification
+        return self.config.copy()
+
+    async def health_check(self) -> Tuple[bool, str]:
+        """Performs a basic health check on the binding. Subclasses should override for specific checks (e.g., API connection)."""
+        # Default implementation assumes healthy if initialized
+        return True, f"Binding '{self.binding_instance_name}' initialized. No specific health check implemented."
+
+    async def generate_stream( self, prompt: str, params: Dict[str, Any], request_info: Dict[str, Any], multimodal_data: Optional[List['InputData']] = None ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Generates output as a stream. Default implementation simulates via non-streaming."""
+        logger.warning(f"Binding '{self.binding_instance_name}' (Type: {self.binding_type_name}) does not implement native streaming. Simulating.")
+        full_response: Union[str, Dict[str, Any], List[Dict[str, Any]]]
+        try:
+            full_response = await self.generate( prompt=prompt, params=params, request_info=request_info, multimodal_data=multimodal_data )
+        except Exception as e:
+             logger.error(f"Error during non-stream call for stream simulation in '{self.binding_instance_name}': {e}", exc_info=True)
+             yield {"type": "error", "content": f"Generation failed during simulation: {e}"}
+             return
+
+        final_output_list: List[Dict[str, Any]] = []
+        # --- Standardize the simulated final output ---
+        # Use a helper if available, otherwise implement basic logic here
+        from lollms_server.core.generation import standardize_output # Assuming helper exists
+        final_output_list = standardize_output(full_response)
+
+        # Yield individual chunks if possible (only for simple text simulation)
+        if len(final_output_list) == 1 and final_output_list[0].get("type") == "text":
+            text_content = final_output_list[0].get("data", "")
+            if text_content:
+                # Simulate word-by-word streaming for text
+                words = text_content.split()
+                for i, word in enumerate(words):
+                    yield {"type": "chunk", "content": word + (" " if i < len(words) - 1 else "")}
+                    await asyncio.sleep(0.01) # Small delay
+            else:
+                 yield {"type":"info", "content":"Empty text result from non-stream generate."}
+        elif final_output_list:
+            # For non-text or complex list outputs, just yield an info chunk
+             yield {"type":"info", "content":"Non-streamable output generated."}
+        else:
+             yield {"type":"error", "content":"Non-stream generate returned empty result."}
+
+
+        # Yield the standardized final chunk
+        final_metadata = {"status": "complete", "simulated_stream": True}
+        # Add metadata from the first standardized output item if it exists
+        if final_output_list:
+            final_metadata.update(final_output_list[0].get("metadata", {}))
+
+        yield {"type": "final", "content": final_output_list, "metadata": final_metadata}
+        return
+
+    async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
+        """Tokenizes text (Optional)."""
+        raise NotImplementedError(f"Binding type '{self.binding_type_name}' does not support tokenization.")
+
+    async def detokenize(self, tokens: List[int]) -> str:
+        """Detokenizes tokens (Optional)."""
+        raise NotImplementedError(f"Binding type '{self.binding_type_name}' does not support detokenization.")
+
+    def get_resource_requirements(self, model_name: Optional[str] = None) -> Dict[str, Any]:
+        """Estimates resource requirements (Optional). Default assumes GPU needed."""
+        return {"gpu_required": True, "estimated_vram_mb": 1024}
+
+    # --- Helpers for Structured Output (Keep these, they use self.generate) ---
+    async def generate_structured_output( self, prompt: str, structure_definition: str, output_language_tag: str = "json", params: Optional[Dict[str, Any]] = None, request_info: Optional[Dict[str, Any]] = None, multimodal_data: Optional[List['InputData']] = None, system_message_prefix: str = "Follow instructions precisely:\n" ) -> Optional[Any]:
+        """Generates text and attempts to extract structured output (e.g., JSON)."""
         if params is None: params = {}
         if request_info is None: request_info = {}
-
-        structured_system_message = (
-             f"{system_message_prefix}"
-             f"Generate a response that directly answers the user's query: '{prompt}'.\n"
-             f"Your response MUST contain EXACTLY ONE markdown code block.\n"
-             f"The markdown code block MUST be tagged with the language '{output_language_tag}'.\n"
-             f"The content inside the markdown code block MUST conform to the following structure definition:\n"
-             f"{structure_definition}\n"
-             f"Do NOT include any explanation, conversation, or text outside the markdown code block."
-        )
-
+        structured_system_message = ( f"{system_message_prefix}" f"Generate a response answering: '{prompt}'.\n" f"Your response MUST contain EXACTLY ONE markdown code block tagged '{output_language_tag}'.\n" f"The content inside MUST conform to:\n{structure_definition}\n" f"Output ONLY the markdown block." )
         structured_params = params.copy()
         existing_sys_msg = structured_params.get("system_message", "")
         separator = "\n\n" if existing_sys_msg else ""
         structured_params["system_message"] = f"{existing_sys_msg}{separator}{structured_system_message}"
-
-        logger.debug(f"Generating structured output (expecting first block). Tag: '{output_language_tag}'")
-
+        logger.debug(f"Generating structured output (tag: '{output_language_tag}') for instance '{self.binding_instance_name}'")
         try:
-            llm_response = await self.generate(
-                prompt=prompt,
-                params=structured_params,
-                request_info=request_info,
-                multimodal_data=multimodal_data
-            )
-
-            # --- Extract text from potential dict/list response ---
+            llm_response = await self.generate( prompt=prompt, params=structured_params, request_info=request_info, multimodal_data=multimodal_data )
             response_text = ""
-            if isinstance(llm_response, dict) and "text" in llm_response:
-                response_text = llm_response["text"]
-            elif isinstance(llm_response, str):
-                response_text = llm_response
-            elif isinstance(llm_response, list): # Handle list output
-                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text']
+            if isinstance(llm_response, list): # Prefer list format
+                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text' and item.get('data')]
                 response_text = "\n".join(text_items)
+            elif isinstance(llm_response, dict) and "text" in llm_response: # Handle older dict format
+                response_text = llm_response["text"]
+            elif isinstance(llm_response, str): # Handle plain string
+                response_text = llm_response
             else:
-                 logger.warning(f"generate_structured_output received unexpected response type: {type(llm_response)}. Trying string conversion.")
-                 response_text = str(llm_response)
-            # --- End Extraction ---
-
+                logger.warning(f"generate_structured_output unexpected type: {type(llm_response)}. Trying str conversion."); response_text = str(llm_response)
 
             all_blocks = extract_code_blocks(response_text)
             first_matching_block = None
             for block in all_blocks:
-                lang_match = (
-                    not output_language_tag or
-                    (block.get('type') and block['type'].lower() == output_language_tag.lower())
-                )
+                lang_match = ( not output_language_tag or (block.get('type') and block['type'].lower() == output_language_tag.lower()) )
                 if lang_match:
                     first_matching_block = block
-                    break
+                    break # Found the first matching block
 
             if first_matching_block is None:
-                logger.warning(f"Could not extract any markdown block with tag '{output_language_tag}'. LLM Response Text:\n{response_text}")
-                return None
+                 logger.warning(f"Could not extract block '{output_language_tag}' from response. LLM Text:\n{response_text}")
+                 return None
 
             if not first_matching_block.get('is_complete', True):
-                 logger.warning(f"Extracted block for tag '{output_language_tag}' seems incomplete.")
+                 logger.warning(f"Extracted block '{output_language_tag}' seems incomplete.")
 
             extracted_content = first_matching_block.get('content', '')
 
             if output_language_tag.lower() == "json":
                 try:
-                    # Attempt to remove potential ```json markdown fences if they were included
-                    # json_content_cleaned = extracted_content.strip()
-                    # if json_content_cleaned.startswith("```json"):
-                    #     json_content_cleaned = json_content_cleaned[len("```json"):].strip()
-                    # if json_content_cleaned.endswith("```"):
-                    #     json_content_cleaned = json_content_cleaned[:-len("```")].strip()
-
                     parsed_json = json.loads(extracted_content)
-                    logger.debug("Successfully extracted and parsed JSON from first matching block.")
+                    logger.debug("Successfully parsed JSON.")
                     return parsed_json
                 except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse extracted content as JSON. Content:\n{extracted_content}\nError: {e}")
+                    logger.error(f"Failed to parse JSON from extracted block. Content:\n{extracted_content}\nError: {e}")
                     return None
             else:
-                logger.debug(f"Successfully extracted text content for tag '{output_language_tag}' from first matching block.")
-                return extracted_content
-
+                 logger.debug(f"Successfully extracted text content '{output_language_tag}'.")
+                 return extracted_content
         except Exception as e:
-            logger.error(f"Error during generate_structured_output: {e}", exc_info=True)
-            return None
+             logger.error(f"Error during generate_structured_output for '{self.binding_instance_name}': {e}", exc_info=True)
+             return None
 
-    async def generate_and_extract_all_codes(
-        self,
-        prompt: str,
-        params: Optional[Dict[str, Any]] = None,
-        request_info: Optional[Dict[str, Any]] = None,
-        multimodal_data: Optional[List['InputData']] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Generates text (potentially considering multimodal input) and extracts ALL
-        markdown code blocks.
-        """
+    async def generate_and_extract_all_codes( self, prompt: str, params: Optional[Dict[str, Any]] = None, request_info: Optional[Dict[str, Any]] = None, multimodal_data: Optional[List['InputData']] = None ) -> List[Dict[str, Any]]:
+        """Generates text and extracts ALL markdown code blocks."""
         if params is None: params = {}
         if request_info is None: request_info = {}
-        logger.debug("Generating response to extract all code blocks...")
+        logger.debug(f"Generating to extract all code blocks for instance '{self.binding_instance_name}'...")
         try:
-            llm_response = await self.generate(
-                prompt=prompt,
-                params=params,
-                request_info=request_info,
-                multimodal_data=multimodal_data
-            )
-            # --- Extract text from potential dict/list response ---
+            llm_response = await self.generate( prompt=prompt, params=params, request_info=request_info, multimodal_data=multimodal_data )
             response_text = ""
-            if isinstance(llm_response, dict) and "text" in llm_response:
-                response_text = llm_response["text"]
-            elif isinstance(llm_response, str):
-                response_text = llm_response
-            elif isinstance(llm_response, list):
-                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text']
+            # Handle different return types from generate
+            if isinstance(llm_response, list): # Prefer list format
+                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text' and item.get('data')]
                 response_text = "\n".join(text_items)
+            elif isinstance(llm_response, dict) and "text" in llm_response: # Handle older dict format
+                response_text = llm_response["text"]
+            elif isinstance(llm_response, str): # Handle plain string
+                response_text = llm_response
             else:
-                 logger.warning(f"generate_and_extract_all_codes received unexpected response type: {type(llm_response)}. Trying string conversion.")
-                 response_text = str(llm_response)
-            # --- End Extraction ---
+                logger.warning(f"generate_and_extract_all_codes unexpected type: {type(llm_response)}. Trying str conversion."); response_text = str(llm_response)
+
             return extract_code_blocks(response_text)
-
         except Exception as e:
-            logger.error(f"Error during generate_and_extract_all_codes: {e}", exc_info=True)
-            return []
+             logger.error(f"Error during generate_and_extract_all_codes for '{self.binding_instance_name}': {e}", exc_info=True)
+             return []
 
-    async def ask_yes_no(
-        self,
-        question: str,
-        params: Optional[Dict[str, Any]] = None,
-        request_info: Optional[Dict[str, Any]] = None,
-        multimodal_data: Optional[List['InputData']] = None
-    ) -> Optional[bool]:
-        """
-        Asks the LLM a yes/no question (potentially considering multimodal input).
-        """
+    async def ask_yes_no( self, question: str, params: Optional[Dict[str, Any]] = None, request_info: Optional[Dict[str, Any]] = None, multimodal_data: Optional[List['InputData']] = None ) -> Optional[bool]:
+        """Asks the LLM a yes/no question."""
         if params is None: params = {}
         if request_info is None: request_info = {}
-
         base_system_message = params.get("system_message", "")
         separator = "\n\n" if base_system_message else ""
-        yes_no_system_message = (
-            f"{base_system_message}{separator}"
-            f"Critically evaluate the user's question based on any prior context.\n"
-            f"Your final response MUST be ONLY the single word 'yes' or the single word 'no'.\n"
-            f"You MUST enclose this single word answer within a markdown code block like this: ```text\nyes``` or ```text\nno```.\n"
-            f"Do NOT provide any explanation or any other text outside the markdown code block."
-        )
-
+        yes_no_system_message = ( f"{base_system_message}{separator}" f"Evaluate the question: '{question}'.\nYour response MUST be ONLY 'yes' or 'no', enclosed in ```text ... ```." )
         yes_no_params = params.copy()
         yes_no_params["system_message"] = yes_no_system_message
-        yes_no_params.setdefault("temperature", 0.1)
-        yes_no_params.setdefault("max_tokens", 10)
+        yes_no_params.setdefault("temperature", 0.1) # Low temp for predictable answer
+        yes_no_params.setdefault("max_tokens", 10) # Short response needed
 
-        logger.debug(f"Asking yes/no question: '{question}'")
-
+        logger.debug(f"Asking yes/no: '{question}' for instance '{self.binding_instance_name}'")
         try:
-            llm_response = await self.generate(
-                prompt=question,
-                params=yes_no_params,
-                request_info=request_info,
-                multimodal_data=multimodal_data
-            )
-            # --- Extract text from potential dict/list response ---
+            llm_response = await self.generate( prompt=question, params=yes_no_params, request_info=request_info, multimodal_data=multimodal_data )
             response_text = ""
-            if isinstance(llm_response, dict) and "text" in llm_response:
-                response_text = llm_response["text"]
-            elif isinstance(llm_response, str):
-                response_text = llm_response
-            elif isinstance(llm_response, list):
-                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text']
+            # Handle different return types from generate
+            if isinstance(llm_response, list): # Prefer list format
+                text_items = [item['data'] for item in llm_response if isinstance(item,dict) and item.get('type')=='text' and item.get('data')]
                 response_text = "\n".join(text_items)
+            elif isinstance(llm_response, dict) and "text" in llm_response: # Handle older dict format
+                response_text = llm_response["text"]
+            elif isinstance(llm_response, str): # Handle plain string
+                response_text = llm_response
             else:
-                 logger.warning(f"ask_yes_no received unexpected response type: {type(llm_response)}. Trying string conversion.")
-                 response_text = str(llm_response)
-            # --- End Extraction ---
+                logger.warning(f"ask_yes_no unexpected type: {type(llm_response)}. Trying str conversion."); response_text = str(llm_response)
 
             code_blocks = extract_code_blocks(response_text)
             answer_block = None
             for block in code_blocks:
                  block_type = block.get('type', 'unknown').lower()
-                 # Allow unknown type as well, as LLM might forget the 'text' tag
+                 # Accept text or unknown block type for yes/no
                  if block_type in ['text', 'unknown']:
-                      answer_block = block
-                      break
+                     answer_block = block
+                     break # Found the first potential answer block
 
             if answer_block is None:
-                 logger.warning(f"Could not find ```text or ``` block in yes/no response. Response:\n{response_text}")
-                 # Attempt to parse directly if no block found
+                 logger.warning(f"Could not find ``` block in yes/no response for '{self.binding_instance_name}'. Response:\n{response_text}")
+                 # Fallback: check direct response text
                  direct_answer = response_text.strip().lower()
                  if direct_answer == "yes": logger.debug("Parsed yes/no directly: YES"); return True
                  elif direct_answer == "no": logger.debug("Parsed yes/no directly: NO"); return False
-                 return None # Could not determine from direct text either
+                 return None # Could not determine
 
             if not answer_block.get('is_complete', True):
-                logger.warning("Extracted yes/no answer block might be incomplete.")
+                 logger.warning("Yes/no block seems incomplete.")
 
             answer = answer_block.get('content', '').strip().lower()
             if answer == "yes":
-                logger.debug("Parsed yes/no answer from block: YES")
-                return True
+                logger.debug("Parsed yes/no from block: YES"); return True
             elif answer == "no":
-                logger.debug("Parsed yes/no answer from block: NO")
-                return False
+                logger.debug("Parsed yes/no from block: NO"); return False
             else:
-                logger.warning(f"LLM answer in block was not 'yes' or 'no': '{answer}'. Raw block content: '{answer_block.get('content')}'")
-                return None
-
+                logger.warning(f"Answer in block not 'yes' or 'no': '{answer}'. Raw Content: '{answer_block.get('content')}'"); return None
         except Exception as e:
-            logger.error(f"Error during ask_yes_no for question '{question}': {e}", exc_info=True)
-            return None
-    # --- END Structured Output Helpers ---
+             logger.error(f"Error during ask_yes_no for '{self.binding_instance_name}' question '{question}': {e}", exc_info=True)
+             return None
+    # --- End Structured Output Helpers ---
 
 
 # --- Binding Manager ---
 
 class BindingManager:
-    """Loads and manages binding instances ONLY as defined in the configuration."""
+    """Discovers binding types, loads instance configurations, and manages binding instances."""
 
-    def __init__(self, config: AppConfig, resource_manager: ResourceManager):
-        self.config = config
+    def __init__(self, main_config: ConfigGuard, resource_manager: ResourceManager):
+        """
+        Initializes the BindingManager.
+
+        Args:
+            main_config: The loaded main ConfigGuard object.
+            resource_manager: The shared ResourceManager instance.
+        """
+        self.main_config = main_config
         self.resource_manager = resource_manager
-        # Stores the CLASS for successfully loaded binding types {type_name: BindingClass}
-        self._binding_classes: Dict[str, Type[Binding]] = {}
-        # Stores successfully instantiated binding instances {logical_name: BindingInstance}
+        self.encryption_key = get_encryption_key() # Get key from main config/env
+
+        # Stores metadata for *discovered* binding types {type_name: card_data_dict}
+        self._discovered_binding_types: Dict[str, Dict[str, Any]] = {}
+        # Stores successfully instantiated binding instances {instance_name: BindingInstance}
         self._binding_instances: Dict[str, Binding] = {}
-        # Stores errors encountered during loading/instantiation {logical_name or type_name: error_message}
-        self._load_errors: Dict[str, str] = {}
+        # Stores errors during type discovery or instance loading
+        self._load_errors: Dict[str, str] = {} # {identifier: error_message}
 
-    def _find_binding_file(self, binding_type: str) -> Optional[Tuple[Path, Path]]:
-        """
-        Searches for the Python file corresponding to the binding type.
-        Prioritizes personal_bindings_folder over example_bindings_folder.
+    def _discover_binding_types(self):
+        """Scans configured folders for binding directories with valid binding_card.yaml."""
+        logger.info("Discovering binding types...")
+        self._discovered_binding_types = {}
+        self._load_errors = {} # Reset discovery errors
+        binding_folders = []
+        server_root = get_server_root() # Should be absolute
 
-        Returns:
-            A tuple (file_path, package_path) or None if not found.
-        """
-        filename = f"{binding_type}.py"
-        search_folders = []
+        # Use paths from the main ConfigGuard object
+        example_folder = Path(self.main_config.paths.example_bindings_folder) if self.main_config.paths.example_bindings_folder else None
+        personal_folder = Path(self.main_config.paths.bindings_folder) if self.main_config.paths.bindings_folder else None
 
-        # Prioritize personal folder
-        personal_folder = self.config.paths.bindings_folder
-        if personal_folder and personal_folder.is_dir():
-            search_folders.append(personal_folder)
-            add_path_to_sys_path(personal_folder.parent) # Ensure parent is searchable
-
-        # Fallback to example folder
-        example_folder = self.config.paths.example_bindings_folder
+        # Paths should already be absolute after config initialization
         if example_folder and example_folder.is_dir():
-            if not personal_folder or personal_folder.resolve() != example_folder.resolve(): # Avoid adding same path twice
-                search_folders.append(example_folder)
-                add_path_to_sys_path(example_folder.parent) # Ensure parent is searchable
+             binding_folders.append(example_folder)
+             add_path_to_sys_path(example_folder.parent) # Add parent (e.g., zoos)
+             logger.debug(f"Added example binding parent path: {example_folder.parent}")
+        else: logger.debug(f"Example bindings folder not found or not configured: {example_folder}")
 
-        for folder in search_folders:
-            potential_path = folder / filename
-            if potential_path.is_file():
-                logger.debug(f"Found binding file for type '{binding_type}' at: {potential_path}")
-                # The package path is the folder itself (e.g., 'bindings')
-                return potential_path, folder
-        logger.warning(f"Could not find binding file '{filename}' in configured folders: {search_folders}")
-        return None
+        if personal_folder and personal_folder.is_dir():
+             # Avoid adding same path twice if they resolve identically
+             if not example_folder or personal_folder != example_folder:
+                  binding_folders.append(personal_folder)
+                  add_path_to_sys_path(personal_folder.parent) # Add parent (e.g., project root)
+                  logger.debug(f"Added personal binding parent path: {personal_folder.parent}")
+             else: logger.debug("Personal binding folder is same as example folder.")
+        else: logger.debug(f"Personal bindings folder not found or not configured: {personal_folder}")
 
-    async def load_bindings(self):
-        """
-        Loads and instantiates binding instances based SOLELY on the config.toml [bindings] section.
-        """
-        logger.info("Loading configured bindings...")
-        self._binding_classes = {}  # Reset loaded classes
-        self._binding_instances = {} # Reset instances
-        self._load_errors = {}      # Reset errors
 
-        if not self.config.bindings:
-            logger.warning("No bindings defined in config.toml [bindings] section.")
+        if not binding_folders:
+            logger.warning("No binding type folders configured or found.")
             return
 
-        for logical_name, instance_config in self.config.bindings.items():
-            binding_type = instance_config.get("type")
-            if not binding_type:
-                err_msg = f"Binding '{logical_name}' in config.toml is missing the required 'type' field."
-                logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
+        for folder in binding_folders:
+            logger.info(f"Scanning for binding types in: {folder}")
+            for potential_path in folder.iterdir():
+                # Ensure it's a directory and has potential to be a binding package
+                if potential_path.is_dir() and not potential_path.name.startswith(('.', '_')):
+                    init_file = potential_path / "__init__.py"
+                    card_file = potential_path / "binding_card.yaml"
+                    # Check for required files
+                    if init_file.exists() and card_file.exists():
+                        try:
+                            # Load the card first to get the type_name and schema
+                            with open(card_file, 'r', encoding='utf-8') as f:
+                                card_data = yaml.safe_load(f)
 
-            # --- Find the specific binding file ---
-            find_result = self._find_binding_file(binding_type)
-            if not find_result:
-                 err_msg = f"Python file for binding type '{binding_type}' (for instance '{logical_name}') not found in configured folders."
-                 logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
-            file_path, package_path = find_result
+                            # Validate basic card structure
+                            if not isinstance(card_data, dict):
+                                 self._load_errors[str(potential_path)] = f"Invalid binding_card.yaml format (not a dictionary) in {potential_path.name}"; continue
+                            if "type_name" not in card_data or not isinstance(card_data["type_name"], str):
+                                 self._load_errors[str(potential_path)] = f"Missing or invalid 'type_name' in binding_card.yaml in {potential_path.name}"; continue
+                            if "instance_schema" not in card_data or not isinstance(card_data["instance_schema"], dict):
+                                 self._load_errors[str(potential_path)] = f"Missing or invalid 'instance_schema' in binding_card.yaml in {potential_path.name}"; continue
 
-            # --- Load the specific module ---
-            module, error = safe_load_module(file_path, package_path=package_path)
-            if error or not module:
-                err_msg = f"Failed to load module '{file_path}' for binding type '{binding_type}' (instance '{logical_name}'): {error or 'Unknown module load error'}"
-                logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
+                            type_name = card_data["type_name"]
+                            card_data["package_path"] = potential_path.resolve() # Store absolute path
+                            # Prioritize personal bindings over examples
+                            if type_name not in self._discovered_binding_types or folder == personal_folder:
+                                self._discovered_binding_types[type_name] = card_data
+                                logger.info(f"Discovered binding type: '{type_name}' from {potential_path.name}")
+                            else:
+                                 logger.debug(f"Ignoring duplicate binding type '{type_name}' from {potential_path.name} (already found in prioritized folder).")
+                        except yaml.YAMLError as e:
+                            self._load_errors[str(potential_path)] = f"YAML Error in binding_card.yaml: {e}"
+                        except Exception as e:
+                             self._load_errors[str(potential_path)] = f"Error loading binding card: {e}"
+                    else:
+                        logger.debug(f"Skipping directory {potential_path.name}: Missing __init__.py or binding_card.yaml")
 
-            # --- Find the specific Binding class within the module ---
-            found_classes = find_classes_in_module(module, Binding)
-            BindingClass: Optional[Type[Binding]] = None
-            for cls in found_classes:
-                # Check if the class explicitly defines the type_name we're looking for
-                if getattr(cls, 'binding_type_name', None) == binding_type:
-                    BindingClass = cls; break
-                # Fallback: Check the config returned by get_binding_config (less direct)
-                # try:
-                #     if cls.get_binding_config().get("type_name") == binding_type:
-                #         BindingClass = cls; break
-                # except Exception: pass # Ignore errors in get_binding_config here
+        logger.info(f"Discovery finished. Found {len(self._discovered_binding_types)} valid binding types.")
+        if self._load_errors: logger.warning(f"Binding Type Discovery Errors: {self._load_errors}")
 
-            if not BindingClass:
-                 err_msg = f"Could not find Binding class with type_name '{binding_type}' inside module '{file_path}' (for instance '{logical_name}'). Found: {[c.__name__ for c in found_classes]}"
-                 logger.error(err_msg); self._load_errors[logical_name] = err_msg; continue
+    async def load_bindings(self):
+        """Loads and instantiates binding instances based on the main config's bindings_map."""
+        self._discover_binding_types() # Find all available binding types first
+        self._binding_instances = {} # Reset instances (keep discovery errors)
+        instance_configs_dir = get_binding_instances_config_path() # Gets absolute path
 
-            # --- Instantiate the binding ---
+        logger.info(f"Loading binding instances based on 'bindings_map' in main config...")
+        logger.info(f"Expecting instance config files in: {instance_configs_dir}")
+
+        # Iterate through the bindings_map section from the main config
+        bindings_map_section = getattr(self.main_config, "bindings_map", None)
+        if not bindings_map_section:
+             logger.warning("No 'bindings_map' section found in main configuration. No instances to load.")
+             return
+
+        try:
+             # Use get_dict() for dynamic sections in ConfigGuard >= 0.4.0
+             bindings_to_load = bindings_map_section.get_dict()
+        except AttributeError:
+             logger.error("Could not retrieve bindings_map dictionary. Check ConfigGuard version or config structure.")
+             return
+        except Exception as e:
+             logger.error(f"Error retrieving bindings_map: {e}", exc_info=True)
+             return
+
+        if not bindings_to_load:
+            logger.info("Bindings map is empty. No binding instances configured.")
+            return
+
+        for instance_name, type_name in bindings_to_load.items():
+            if not isinstance(type_name, str) or not type_name:
+                 err_msg = f"Invalid type name '{type_name}' for instance '{instance_name}' in bindings_map."
+                 logger.error(err_msg); self._load_errors[instance_name] = err_msg; continue
+
+            logger.info(f"--- Loading instance: '{instance_name}' (Type: '{type_name}') ---")
+
+            # 1. Find Discovered Type Info
+            if type_name not in self._discovered_binding_types:
+                 err_msg = f"Binding type '{type_name}' required by instance '{instance_name}' not discovered or failed discovery."
+                 logger.error(err_msg); self._load_errors[instance_name] = err_msg; continue
+            type_card_data = self._discovered_binding_types[type_name]
+            instance_schema = type_card_data.get("instance_schema")
+            package_path = type_card_data.get("package_path") # Should be absolute Path obj
+            if not instance_schema or not isinstance(instance_schema, dict):
+                 err_msg = f"Instance schema missing or invalid in binding card for type '{type_name}'."
+                 logger.error(err_msg); self._load_errors[instance_name] = err_msg; continue
+            if not package_path or not isinstance(package_path, Path):
+                 err_msg = f"Package path missing for type '{type_name}'."
+                 logger.error(err_msg); self._load_errors[instance_name] = err_msg; continue
+
+            # 2. Load Instance Configuration using ConfigGuard
+            instance_config_guard: Optional[ConfigGuard] = None
+            instance_config_dict: Optional[Dict[str, Any]] = None
+            # Try finding file with common extensions
+            instance_config_path = None
+            found_handler_class = None
+            for ext, handler_cls in _binding_handler_map.items():
+                 potential_path = instance_configs_dir / f"{instance_name}{ext}"
+                 if potential_path.is_file():
+                     instance_config_path = potential_path
+                     found_handler_class = handler_cls
+                     break # Found the file
+
+            if not instance_config_path:
+                 err_msg = f"Config file for instance '{instance_name}' not found in {instance_configs_dir} (tried common extensions)."
+                 logger.error(err_msg); self._load_errors[instance_name] = err_msg; continue
+
             try:
-                logger.info(f"Instantiating binding '{logical_name}' (type: {binding_type}) from class {BindingClass.__name__}")
-                full_config = instance_config.copy(); full_config["binding_name"] = logical_name
-                instance = BindingClass(config=full_config, resource_manager=self.resource_manager)
+                logger.info(f"Loading instance config from: {instance_config_path}")
+                # Add the expected type and instance name to the schema for validation/clarity
+                # This ensures the loaded config dict contains these essential fields.
+                schema_copy = instance_schema.copy() # Don't modify original
+                schema_copy.setdefault("type", {"type": "str", "default": type_name, "help": "Internal type name."})
+                schema_copy.setdefault("binding_instance_name", {"type": "str", "default": instance_name, "help":"Internal instance name."})
 
-                # --- Perform Health Check ---
+                instance_config_guard = ConfigGuard(
+                    schema=schema_copy,
+                    config_path=instance_config_path,
+                    encryption_key=self.encryption_key, # Use key from main config/env
+                    handler=found_handler_class() # Instantiate the found handler
+                )
+                instance_config_guard.load() # Load the specific settings for this instance
+                instance_config_dict = instance_config_guard.get_config_dict()
+
+                # Verify loaded type matches expected type from map
+                loaded_type = instance_config_dict.get("type")
+                if loaded_type != type_name:
+                     raise ConfigGuardError(f"Instance config file '{instance_config_path.name}' has type '{loaded_type}', but map expects '{type_name}'.")
+
+                # Ensure binding_instance_name is correctly set (should be by default)
+                instance_config_dict["binding_instance_name"] = instance_name
+
+            except ConfigGuardError as e:
+                 err_msg = f"Error loading/validating config for instance '{instance_name}' from {instance_config_path}: {e}"
+                 logger.error(err_msg, exc_info=True); self._load_errors[instance_name] = err_msg; continue
+            except ImportError as e: # Missing handler dependency
+                 err_msg = f"Missing dependency for instance config '{instance_name}' ({instance_config_path.suffix}): {e}"
+                 logger.error(err_msg); self._load_errors[instance_name] = err_msg; continue
+            except Exception as e:
+                 err_msg = f"Unexpected error loading instance config '{instance_name}': {e}"
+                 logger.error(err_msg, exc_info=True); self._load_errors[instance_name] = err_msg; continue
+
+            # 3. Import Binding Package/Module
+            BindingClass: Optional[Type[Binding]] = None
+            try:
+                # Use the absolute package path found during discovery
+                # Example: package_path = /path/to/server/zoos/bindings/ollama_binding
+                # parent_dir_name = zoos/bindings ; package_path.name = ollama_binding
+                # package_import_name = zoos.bindings.ollama_binding (assuming zoos is in sys.path)
+                parent_dir_name = package_path.parent.name
+                package_module_name = package_path.name
+                # Construct relative import path from the parent dir added to sys.path
+                package_import_name = f"{parent_dir_name}.{package_module_name}"
+
+                logger.info(f"Importing binding package: {package_import_name}")
+                # Use safe_load_module which handles adding path temporarily if needed
+                # module, import_error = safe_load_module(package_path / "__init__.py", package_path=package_path)
+                # Or simpler, rely on sys.path being set correctly earlier:
+                module = importlib.import_module(package_import_name)
+
+                if not module: raise ImportError("Module loaded as None")
+
+                # Find the class inheriting from Binding with the correct type_name
+                found_classes = find_classes_in_module(module, Binding)
+                logger.debug(f"Found potential binding classes in {package_import_name}: {[c.__name__ for c in found_classes]}")
+                for cls in found_classes:
+                    # Check type_name defined in class or loaded from its card
+                    cls_type_name = getattr(cls, 'binding_type_name', None)
+                    # We don't need to load the card again here, type_name should be on the class
+                    # if not cls_type_name:
+                    #     try: cls_type_name = cls.get_binding_card().get("type_name")
+                    #     except Exception: pass
+
+                    if cls_type_name == type_name:
+                        BindingClass = cls
+                        logger.info(f"Found matching Binding class: {BindingClass.__name__}")
+                        break
+                if not BindingClass:
+                    raise TypeError(f"No class with binding_type_name='{type_name}' found in package '{package_import_name}'. Found: {[c.__name__ for c in found_classes]}")
+
+            except ImportError as e:
+                 err_msg = f"Failed import package '{package_import_name}' for type '{type_name}': {e}"
+                 logger.error(err_msg, exc_info=True); self._load_errors[instance_name] = err_msg; continue
+            except TypeError as e:
+                 err_msg = f"Error finding class for type '{type_name}': {e}"
+                 logger.error(err_msg); self._load_errors[instance_name] = err_msg; continue
+            except Exception as e:
+                 err_msg = f"Error loading/inspecting package for type '{type_name}': {e}"
+                 logger.error(err_msg, exc_info=True); self._load_errors[instance_name] = err_msg; continue
+
+            # 4. Instantiate Binding
+            try:
+                logger.info(f"Instantiating binding '{instance_name}' (type: {type_name})")
+                # Pass the instance config *dictionary* to the constructor
+                instance = BindingClass(config=instance_config_dict, resource_manager=self.resource_manager)
+
+                # 5. Health Check (Optional but recommended)
                 healthy, message = await instance.health_check()
                 if healthy:
-                    logger.info(f"Successfully instantiated binding '{logical_name}'. Health check OK: {message}")
-                    self._binding_instances[logical_name] = instance
-                    # Store the loaded class definition if not already stored
-                    if binding_type not in self._binding_classes:
-                         self._binding_classes[binding_type] = BindingClass
+                    logger.info(f"Successfully instantiated '{instance_name}'. Health OK: {message}")
+                    self._binding_instances[instance_name] = instance
                 else:
-                    err_msg = f"Health check failed for binding '{logical_name}' (type: {binding_type}): {message}"
-                    logger.error(err_msg); self._load_errors[logical_name] = err_msg
-                    # Optionally store the class even if health check failed? For now, don't store instance.
-                    # if binding_type not in self._binding_classes:
-                    #      self._binding_classes[binding_type] = BindingClass
+                    err_msg = f"Health check failed for instance '{instance_name}': {message}"
+                    logger.error(err_msg)
+                    # Store error, but don't add instance if health check fails initially
+                    self._load_errors[instance_name] = err_msg
 
             except Exception as e:
-                err_msg = f"Failed to instantiate binding '{logical_name}' (type: {binding_type}): {e}"
-                logger.error(err_msg, exc_info=True); self._load_errors[logical_name] = err_msg
+                 err_msg = f"Failed instantiate binding '{instance_name}': {e}"
+                 logger.error(err_msg, exc_info=True); self._load_errors[instance_name] = err_msg
 
-        logger.info(f"Finished loading bindings. Instantiated {len(self._binding_instances)} successfully.")
-        if self._load_errors:
-            logger.warning(f"Encountered errors during binding load/instantiation: {self._load_errors}")
+
+        logger.info(f"Finished loading instances. Instantiated: {len(self._binding_instances)}. Errors: {len(self._load_errors)}")
+        if self._load_errors: logger.warning(f"Instance Loading Errors: {self._load_errors}")
+
 
     def list_binding_types(self) -> Dict[str, Dict[str, Any]]:
-        """Returns metadata for *successfully loaded* binding types based on config."""
+        """Returns metadata for discovered binding types from their cards."""
         types_info = {}
-        # Iterate through the classes that were loaded because they were configured
-        for type_name, cls in self._binding_classes.items():
-            try: types_info[type_name] = cls.get_binding_config()
-            except Exception as e: logger.warning(f"Could not get config for loaded binding type '{type_name}': {e}"); types_info[type_name] = {"error": "Failed to retrieve config"}
+        for type_name, card_data in self._discovered_binding_types.items():
+            # Return a subset of card data, exclude schema and path for listing
+            info = {k: v for k, v in card_data.items() if k not in ["instance_schema", "package_path"]}
+            types_info[type_name] = info
         return types_info
 
     def list_binding_instances(self) -> Dict[str, Dict[str, Any]]:
-        """Returns the configuration for all successfully instantiated bindings."""
+        """Returns the configuration dictionary for successfully instantiated bindings."""
         instances_info = {}
         for name, instance in self._binding_instances.items():
-            try: instances_info[name] = instance.get_instance_config()
-            except Exception as e: logger.warning(f"Could not get config for binding instance '{name}': {e}"); instances_info[name] = {"error": "Failed to retrieve config"}
+            try:
+                # Return the dictionary that was passed during init
+                # Make a copy to avoid external modification
+                config_copy = instance.get_instance_config()
+                # Maybe remove sensitive keys like api_key before returning?
+                # config_copy.pop('api_key', None) # Example removal
+                instances_info[name] = config_copy
+            except Exception as e:
+                logger.warning(f"Could not get config dict for instance '{name}': {e}")
+                instances_info[name] = {"error": "Failed to retrieve config dict", "type": instance.binding_type_name}
         return instances_info
 
-    def get_binding(self, logical_name: str) -> Optional[Binding]:
-        """
-        Gets a specific binding instance by its logical name from the config.
+    def get_binding(self, instance_name: str) -> Optional[Binding]:
+        """Gets a specific binding instance by its configured name."""
+        instance = self._binding_instances.get(instance_name)
+        if not instance:
+             logger.error(f"Binding instance '{instance_name}' not found or failed load. Check config/logs.")
+             # Report specific load error if available
+             if instance_name in self._load_errors:
+                 logger.error(f" -> Instance Load Error: {self._load_errors[instance_name]}")
+             # Check if it was defined in map but failed load vs not defined at all
+             elif instance_name in (getattr(self.main_config, "bindings_map", {}) or {}):
+                 logger.error(" -> Instance was defined in bindings_map but failed to load.")
+             else:
+                 logger.error(" -> Instance was not found in bindings_map.")
 
-        Args:
-            logical_name: The name assigned to the binding instance in config.toml.
-
-        Returns:
-            The Binding instance, or None if not found or failed to load.
-        """
-        instance = self._binding_instances.get(logical_name)
-        if not instance: logger.error(f"Binding instance '{logical_name}' not found or failed to instantiate. Check config and startup logs.")
         return instance
 
     async def cleanup(self):
-        """Cleans up resources used by bindings (e.g., unloads models)."""
+        """Cleans up resources used by binding instances (e.g., unloads models)."""
         logger.info("Cleaning up binding instances...")
         unload_tasks = []
         for name, instance in self._binding_instances.items():
-            logger.info(f"Requesting model unload for binding instance '{name}'...")
-            unload_tasks.append(instance.unload_model()) # Gather async tasks
+            if hasattr(instance, 'unload_model') and callable(instance.unload_model):
+                logger.debug(f"Scheduling unload for instance '{name}'...")
+                unload_tasks.append(instance.unload_model())
+            else:
+                 logger.debug(f"Instance '{name}' does not have an unload_model method.")
 
         results = await asyncio.gather(*unload_tasks, return_exceptions=True)
-        for (name, instance), result in zip(self._binding_instances.items(), results):
-            if isinstance(result, Exception): logger.error(f"Error unloading model for binding '{name}': {result}", exc_info=result)
-            else: logger.info(f"Unload successful for '{name}'.")
-        logger.info("Binding cleanup finished.")
+        instance_names = list(self._binding_instances.keys()) # Get names before iterating results
+
+        for i, result in enumerate(results):                                                
+            instance_name = instance_names[i] # Correlate result with instance name
+            if isinstance(result, Exception):
+                 logger.error(f"Error unloading model for '{instance_name}': {result}", exc_info=result)
+            else:
+                 logger.info(f"Unload successful for '{instance_name}'.")
+        logger.info("Binding cleanup finished.") 

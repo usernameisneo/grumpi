@@ -1,0 +1,110 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/hf_binding/binding_card.yaml
+# Author: lollms_server Team
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the Hugging Face Transformers Binding.
+
+# --- Binding Metadata ---
+type_name: "hf_binding"
+display_name: "Hugging Face (Local)"
+version: "1.0.0" # Version of this binding code
+author: "lollms_server Team"
+description: |
+  Binding for running text and multimodal models locally using the Hugging Face `transformers` library.
+  Requires significant dependencies (torch, transformers, accelerate) and benefits greatly from a CUDA-enabled GPU.
+requirements:
+  - torch>=1.13 # Or higher depending on model/features
+  - torchvision # Often needed with torch
+  - torchaudio # Often needed with torch
+  - transformers>=4.30 # Check compatibility
+  - accelerate>=0.20 # For device mapping, quantization
+  - pillow>=9.0.0 # For image processing
+  - safetensors # For loading newer model formats
+  - bitsandbytes # Optional: Only if 4-bit/8-bit quantization is used
+  - einops # Often a dependency for certain models
+  # - xformers # Optional: For memory efficient attention (if installed)
+  # - flash-attn # Optional: For Flash Attention 2 (if installed and GPU supports)
+supports_streaming: true # Uses TextIteratorStreamer
+documentation_url: "https://huggingface.co/docs/transformers/index"
+supported_output_modalities : ["text", "image"]
+supported_input_modalities : ["text"]
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines settings for instance config files (e.g., my_local_llama3.yaml)
+instance_schema:
+  __version__: "0.1.0" # Schema version for instance config
+  type:
+    type: str
+    default: "hf_binding"
+    help: "Binding type identifier (should be 'hf_binding')."
+  binding_instance_name:
+    type: str
+    default: "hf_local"
+    help: "Internal name assigned to this binding instance."
+
+  # --- HF Binding Specific Settings ---
+  # Model Loading
+  model_name_or_path:
+    type: str
+    default: "microsoft/phi-2" # Example default, user MUST change this usually
+    help: "REQUIRED: Hugging Face Hub model ID (e.g., 'google/gemma-7b-it') or the absolute path to a locally downloaded model directory."
+  device:
+    type: str
+    default: "auto"
+    options: ["auto", "cuda", "mps", "cpu"]
+    help: "Device for inference ('auto' detects CUDA/MPS, falls back to CPU)."
+  use_fp16:
+    type: bool
+    default: True # Common optimization for GPUs
+    help: "Use float16 precision (faster, less VRAM, requires compatible GPU). Ignored on CPU."
+  use_bf16:
+    type: bool
+    default: False
+    help: "Use bfloat16 precision (Ampere+ GPU or MPS, good alternative to fp16). Ignored on CPU or if fp16 is True."
+  quantization:
+    type: str
+    default: "none"
+    options: ["none", "4bit", "8bit"]
+    help: "Apply quantization (4-bit or 8-bit) using bitsandbytes (requires compatible GPU and 'bitsandbytes' library)."
+  use_safetensors:
+    type: bool
+    default: True
+    help: "Prefer loading weights from .safetensors files if available."
+  use_flash_attention_2:
+    type: bool
+    default: False
+    help: "Attempt to use Flash Attention 2 optimization (requires compatible GPU and 'flash-attn' library)."
+  trust_remote_code:
+    type: bool
+    default: False # Default to False for security
+    help: "**SECURITY RISK:** Allow executing custom code defined in the model's repository on Hugging Face Hub. Only enable for trusted models."
+
+  # Generation Defaults (can be overridden in requests)
+  max_tokens:
+    type: int
+    default: 1024
+    min_val: 1
+    help: "Default maximum number of new tokens to generate."
+  temperature:
+    type: float
+    default: 0.7
+    min_val: 0.0
+    max_val: 2.0
+    help: "Default sampling temperature."
+  top_k:
+    type: int
+    default: 50
+    min_val: 0
+    help: "Default top-K sampling."
+  top_p:
+    type: float
+    default: 0.95
+    min_val: 0.0
+    max_val: 1.0
+    help: "Default top-P (nucleus) sampling."
+  repeat_penalty:
+    type: float
+    default: 1.1
+    min_val: 0.0 # Allow disabling penalty
+    help: "Default repetition penalty (1.0 means no penalty)."

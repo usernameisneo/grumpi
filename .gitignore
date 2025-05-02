@@ -180,3 +180,7 @@ chat_history.json
 settings.json
 bot_config.json
 discord_settings.json
+
+#default user data folder
+lollms_user_data
+lollms_configs

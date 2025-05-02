@@ -1,0 +1,67 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/dalle_binding/binding_card.yaml
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the DALL-E Binding.
+
+# --- Binding Metadata ---
+type_name: "dalle_binding"
+display_name: "OpenAI DALL-E"
+version: "1.0.1" # Version of this binding code
+author: "lollms_server Team"
+description: |
+  Binding for OpenAI's DALL-E 2 and DALL-E 3 text-to-image generation models.
+  Uses the OpenAI Python client library and requires an OpenAI API key.
+requirements:
+  - openai>=1.0.0
+  - pillow>=9.0.0 # For potential image validation/processing
+supports_streaming: false # Simulates streaming for the final image result
+documentation_url: "https://platform.openai.com/docs/guides/images"
+supported_output_modalities : ["image","text"]
+supported_input_modalities : ["image"]
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines settings for instance config files (e.g., my_dalle3_instance.yaml)
+instance_schema:
+  __version__: "0.1.0" # Add schema version
+  type:
+    type: str
+    default: "dalle_binding"
+    help: "Binding type identifier (should be 'dalle_binding')."
+  binding_instance_name:
+    type: str
+    default: "dalle1"
+    help: "Internal name assigned to this binding instance."
+
+  # --- DALL-E Binding Specific Settings ---
+  api_key:
+    type: str
+    nullable: true # Allow key to be omitted if OPENAI_API_KEY env var is set
+    default: null
+    secret: true # Mark as secret for potential encryption
+    help: "Your OpenAI API Key. Leave empty to use the OPENAI_API_KEY environment variable."
+  base_url:
+    type: str
+    nullable: true
+    default: null # Defaults to OpenAI official API if null
+    help: "Optional base URL for OpenAI-compatible APIs (less common for DALL-E, but possible)."
+  model:
+    type: str
+    default: "dall-e-3"
+    options: ["dall-e-3", "dall-e-2"] # Known DALL-E models
+    help: "Default DALL-E model to use for this instance."
+  default_size:
+    type: str
+    default: "1024x1024"
+    options: ["1024x1024", "1792x1024", "1024x1792", "512x512", "256x256"] # Common sizes
+    help: "Default image size (check model compatibility: DALL-E 3 has more options)."
+  default_quality:
+    type: str
+    default: "standard"
+    options: ["standard", "hd"] # 'hd' only for DALL-E 3
+    help: "Default image quality ('hd' only available for DALL-E 3)."
+  default_style:
+    type: str
+    default: "vivid"
+    options: ["vivid", "natural"] # Only applicable to DALL-E 3
+    help: "Default image style ('vivid' or 'natural', only for DALL-E 3)."

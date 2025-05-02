@@ -1,0 +1,73 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/dummy_binding/binding_card.yaml
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the Dummy Binding.
+
+# --- Binding Metadata ---
+type_name: "dummy_binding" # MUST match binding_type_name in the class
+display_name: "Dummy Binding" # User-friendly name
+version: "1.2.1" # Version of this binding code
+author: "lollms_server Team"
+description: |
+  A simple placeholder binding for testing and development purposes.
+  It simulates different generation modes (TTT, TTI, TTS, etc.) with configurable delays and optional GPU resource requirement simulation.
+requirements: [] # List Python packages needed by this binding (none needed for dummy)
+supports_streaming: true
+documentation_url: null # Optional: Link to documentation
+supported_output_modalities : ["text"]
+supported_input_modalities : ["text"]
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines the settings users can put in their instance config files (e.g., my_dummy_instance.yaml)
+instance_schema:
+  # --- Required Fields (Usually managed internally, but good practice to define) ---
+  type:
+    type: str
+    default: "dummy_binding"
+    help: "Binding type identifier (MUST be 'dummy_binding')."
+  binding_instance_name:
+    type: str
+    default: "dummy_instance"
+    help: "Unique name for this binding instance (assigned by system/user)."
+
+  # --- Dummy Binding Specific Settings ---
+  mode:
+    type: str
+    default: "ttt"
+    options: ["ttt", "tti", "tts", "ttm", "ttv", "stt", "i2i", "audio2audio"]
+    help: "Simulation mode (Text, Image, Speech, Music, Video, etc.)."
+  delay:
+    type: float
+    default: 0.1
+    min_val: 0.0
+    help: "Simulated delay (seconds) for non-streaming generation."
+  stream_chunk_delay:
+    type: float
+    default: 0.05
+    min_val: 0.0
+    help: "Simulated delay (seconds) between stream chunks."
+  requires_gpu:
+    type: bool
+    default: False
+    help: "Simulate if this instance requires a GPU resource lock."
+  load_delay:
+    type: float
+    default: 0.5
+    min_val: 0.0
+    help: "Simulated delay (seconds) for model loading."
+  context_size:
+    type: int
+    default: 4096
+    min_val: 64
+    help: "Simulated context size for model info."
+  max_output_tokens:
+    type: int
+    default: 1024
+    min_val: 1
+    help: "Simulated max output tokens for model info/TTT mode."
+  model: # Added 'model' setting based on original code usage
+      type: str
+      default: "dummy-model"
+      help: "Name to use for the simulated model."

@@ -1,0 +1,88 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/diffusers_binding/binding_card.yaml
+# Author: lollms_server Team
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the Diffusers Binding.
+
+# --- Binding Metadata ---
+type_name: "diffusers_binding"
+display_name: "Diffusers (Local Stable Diffusion)"
+version: "1.0.0" # Version of this binding code
+author: "lollms_server Team"
+description: |
+  Binding for local Stable Diffusion models (SD 1.5, SDXL, etc.) using the Hugging Face Diffusers library. Requires GPU for reasonable performance.
+requirements:
+  - torch>=1.13 # Check specific version reqs
+  - torchvision
+  - torchaudio
+  - transformers
+  - diffusers>=0.20.0
+  - accelerate
+  - safetensors
+  - invisible_watermark
+  - pillow>=9.0.0
+  - compel>=2.0 # Optional but listed for clarity
+supports_streaming: false # TTI result is returned at the end
+supported_output_modalities : ["image","text"]
+supported_input_modalities : ["image"]
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+instance_schema:
+  __version__: "0.1.0" # Add schema version
+  type:
+    type: str
+    default: "diffusers_binding"
+    help: "Binding type identifier (should be 'diffusers_binding')."
+  binding_instance_name:
+    type: str
+    default: "diffusers1"
+    help: "Internal name assigned to this binding instance."
+
+  # --- Diffusers Binding Specific Settings ---
+  models_folder:
+    type: str
+    default: "models/diffusers_models/" # Relative to server root
+    help: "REQUIRED: Folder containing downloaded diffusers model subdirectories (e.g., 'stable-diffusion-xl-base-1.0')."
+  device:
+    type: str
+    default: "auto"
+    options: ["auto", "cuda", "mps", "cpu"]
+    help: "Device for inference ('auto' detects CUDA/MPS, falls back to CPU)."
+  use_fp16:
+    type: bool
+    default: True
+    help: "Use float16 precision (faster, less VRAM, requires compatible GPU). Ignored on CPU."
+  use_bf16:
+    type: bool
+    default: False
+    help: "Use bfloat16 precision (Ampere+ GPU or MPS, good alternative to fp16). Ignored on CPU or if fp16 is True."
+  scheduler_type:
+    type: str
+    default: "DPMSolverMultistepScheduler"
+    options: # Add known schedulers (list might need updating)
+      - DPMSolverMultistepScheduler
+      - EulerAncestralDiscreteScheduler
+      - EulerDiscreteScheduler
+      - LCMScheduler
+      # - UniPCMultistepScheduler
+      # - DDPMScheduler
+      # - PNDMScheduler
+    help: "Default noise scheduler to use."
+  vae_path:
+    type: str
+    nullable: true
+    default: null
+    help: "Optional path or Hugging Face Hub ID for a custom VAE (Variational Autoencoder)."
+  lora_paths:
+    type: list
+    default: []
+    help: "Optional list of paths or Hub IDs for LoRAs (Low-Rank Adaptations) to load by default."
+  enable_safety_checker:
+    type: bool
+    default: True
+    help: "Enable the default safety checker (if available for the pipeline)."
+  use_compel:
+    type: bool
+    default: False
+    help: "Enable prompt weighting using the Compel library (requires 'compel' to be installed)."

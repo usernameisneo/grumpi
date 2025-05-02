@@ -2,7 +2,7 @@
 import base64
 import ascii_colors as logging
 import re
-from typing import Union, Tuple, List, Dict, Any
+from typing import Union, Tuple, List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -109,3 +109,44 @@ def extract_code_blocks(text: str, return_remaining_text: bool = False) -> Union
         return code_blocks, text_without_blocks
     else:
         return code_blocks
+
+def parse_thought_tags(text: str) -> Tuple[str, Optional[str]]:
+    """
+    Parses text to extract content within <think>...</think> tags.
+
+    Args:
+        text: The raw text potentially containing think tags.
+
+    Returns:
+        A tuple containing:
+        - cleaned_text: The text with all <think> blocks removed.
+        - thoughts: The concatenated content of all found think blocks,
+                    or None if no complete blocks were found.
+    """
+    cleaned_parts = []
+    thoughts_parts = []
+    last_end = 0
+    # Use non-greedy matching .*? to find the first closing tag
+    for match in re.finditer(r"<think>(.*?)</think>", text, re.DOTALL):
+        start, end = match.span()
+        thought_content = match.group(1).strip()
+        # Add text before the current match
+        cleaned_parts.append(text[last_end:start])
+        # Add the thought content
+        if thought_content: # Only add non-empty thoughts
+            thoughts_parts.append(thought_content)
+        # Update position for the next search
+        last_end = end
+
+    # Add any remaining text after the last match
+    cleaned_parts.append(text[last_end:])
+
+    cleaned_text = "".join(cleaned_parts).strip()
+    thoughts = "\n\n".join(thoughts_parts).strip() if thoughts_parts else None
+
+    if thoughts:
+        logger.debug(f"Parsed thoughts: {thoughts[:100]}...")
+    # Handle potential incomplete opening tag at the very end - treat as literal
+    # (The regex already handles this by not matching unclosed tags)
+
+    return cleaned_text, thoughts

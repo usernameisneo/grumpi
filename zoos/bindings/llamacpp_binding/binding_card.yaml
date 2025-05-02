@@ -1,0 +1,102 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/llamacpp_binding/binding_card.yaml
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the llama.cpp Binding.
+
+# --- Binding Metadata ---
+type_name: "llamacpp_binding"
+display_name: "llama.cpp"
+version: "1.2.1" # Version of this binding code
+author: "ParisNeo"
+description: |
+  Binding for running GGUF models using the llama.cpp HTTP server.
+  Requires llama-cpp-python to be installed, preferably with GPU support compiled in (CUBLAS, Metal, etc.) or using prebuilt binaries. Manages a local server process per instance.
+requirements:
+  - llama-cpp-python>=0.2.60 # Check for latest compatible version
+  - requests>=2.28.0 # For health check before server start
+  - httpx>=0.23.0 # For async streaming client
+supports_streaming: true
+documentation_url: "https://github.com/abetlen/llama-cpp-python#web-server"
+supported_output_modalities : ["text", "image"]
+supported_input_modalities : ["text"]
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines settings for instance config files (e.g., my_llama3_gguf.yaml)
+instance_schema:
+  type:
+    type: str
+    default: "llamacpp_binding"
+    help: "Binding type identifier (should be 'llamacpp_binding')."
+  binding_instance_name:
+    type: str
+    default: "llamacpp"
+    help: "Internal name assigned to this binding instance."
+
+  # --- llama.cpp Binding Specific Settings ---
+  models_folder:
+    type: str
+    # Default path relative to server root (resolved later)
+    default: "models/gguf"
+    help: "REQUIRED: Path to the folder containing your GGUF model files."
+  server_path:
+    type: str
+    nullable: true
+    default: null
+    help: "Optional path to the llama.cpp 'server' executable. If null, tries to find it via llama-cpp-python binaries."
+  n_gpu_layers:
+    type: int
+    default: -1
+    help: "Number of layers to offload to GPU (-1 for max/auto, 0 for CPU)."
+  n_ctx:
+    type: int
+    default: 4096 # Increased default context
+    min_val: 64
+    help: "Context window size for the model."
+  batch_size:
+    type: int
+    default: 512
+    min_val: 1
+    help: "Batch size for prompt processing (num_batch)."
+  threads:
+    type: int
+    default: 0 # 0 lets llama.cpp decide based on core count
+    min_val: 0
+    help: "Number of CPU threads for generation (0 = auto)."
+  threads_batch:
+    type: int
+    default: 0 # 0 lets llama.cpp decide based on core count
+    min_val: 0
+    help: "Number of CPU threads for batch processing (0 = auto)."
+  tensor_split:
+    type: str
+    nullable: true
+    default: null
+    help: "How to split tensors across multiple GPUs (e.g., 'auto', '0,1'). Comma-separated list of GPU indices or null."
+  cache_type:
+    type: str
+    default: "fp16"
+    options: ["fp16", "q8_0", "q4_0"]
+    help: "KV Cache type for K/V tensors ('fp16', 'q8_0', 'q4_0'). Affects VRAM/RAM usage and potentially speed."
+  compress_pos_emb:
+    type: float
+    default: 1.0
+    min_val: 0.0
+    help: "RoPE scaling factor (compress positional embeddings). Factor > 1 compresses, < 1 expands. Inverse of --rope-freq-scale."
+  rope_freq_base:
+    type: float
+    default: 0.0 # 0 means use model default
+    min_val: 0.0
+    help: "RoPE base frequency (0 = use model default)."
+  additional_args:
+    type: "dict" # ConfigGuard doesn't have a native dict type, use str and parse later or handle as string map? Let's try defining it as section.
+    # ConfigGuard schemas for 'dict' aren't well defined. Treat as flexible string map.
+    # We can't use a section here easily as keys aren't known beforehand.
+    # Let's stick to a dictionary and validate/parse manually in __init__ or usage.
+    # type: "str"
+    # default: "{}" # Store as JSON string?
+    # help: "Extra command-line flags for llama.cpp server as a JSON dictionary string, e.g., '{\"--mlock\": true, \"--verbose\": true}'"
+    # --- Let's stick to dict type in schema, assuming ConfigGuard handles basic dict load ---
+    default: {}
+    help: "Dictionary of extra command-line flags for llama.cpp server (e.g., {'--mlock': True, '--verbose': True}). Keys are flags, values are arguments (True for flags without args)."

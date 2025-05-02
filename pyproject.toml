@@ -1,14 +1,21 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: pyproject.toml
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Project metadata and build configuration for lollms_server.
+
 [build-system]
 requires = ["setuptools>=77.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "lollms_server"
-version = "0.2.0"
+version = "0.3.0" # Updated version for config changes
 authors = [
-    { name="ParisNeo", email="parisneo_ai@gmail.com" }, # Replace with your email
+    { name="ParisNeo", email="parisneo_ai@gmail.com" },
 ]
-description = "A multi-modal generation server compatible with LOLLMS personalities."
+description = "A multi-modal generation server compatible with LOLLMS personalities, using ConfigGuard."
 readme = "README.md"
 license = { file="LICENSE" }
 requires-python = ">=3.9"
@@ -18,69 +25,91 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Communications :: Chat",
-    "Development Status :: 3 - Alpha", # Start with Alpha or Beta
+    "Development Status :: 3 - Alpha", # Still Alpha
 ]
 dependencies = [
     "ascii_colors>=0.10.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.23.0",
-    "pydantic>=2.0.0",
-    "toml>=0.10.0",
+    "pydantic>=2.0.0", # Keep Pydantic for API models
+    # "toml>=0.10.0", # ConfigGuard's TOML handler requires 'toml', added via extras below
     "python-dotenv>=1.0.0",
     "aiofiles>=23.1.0",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0", # Required for YAML handler (and personality loading)
+    "configguard>=0.4.0", # <<< ADDED ConfigGuard
+    "pipmaster", # Still used by dependency_manager
+    "requests>=2.28.0", # Needed by some bindings (ollama, llamacpp)
+    "httpx>=0.23.0", # Needed by API tests and potentially async bindings
+    # --- Removed OpenAI/Ollama here, handled by extras/user install ---
 ]
 
 [project.urls]
-Homepage = "https://github.com/ParisNeo/lollms_server" # Replace with actual URL later
-BugTracker = "https://github.com/ParisNeo/lollms_server/issues" # Replace
+Homepage = "https://github.com/ParisNeo/lollms_server"
+BugTracker = "https://github.com/ParisNeo/lollms_server/issues"
 
-# Optional: Define extras for different bindings
+# Optional: Define extras for different bindings AND ConfigGuard handlers
 [project.optional-dependencies]
-openai = ["openai>=1.0.0"]
-ollama = ["ollama>=0.1.7"]
-# huggingface = ["transformers", "torch", "diffusers", "accelerate"] # Example
-# llamacpp = ["llama-cpp-python"] # Example
+# Config Handlers
+yaml = ["pyyaml>=6.0"] # Already in main dependencies, but explicit extra is good
+toml = ["toml>=0.10.0"] # <<< ADDED toml dependency here
+encryption = ["cryptography>=3.4"] # For ConfigGuard encryption
 
+# Bindings
+openai = ["openai>=1.0.0", "pillow>=9.0.0"] # Pillow for vision
+ollama = ["ollama>=0.1.7", "pillow>=9.0.0"] # Pillow for vision
+gemini = ["google-generativeai>=0.4.0", "pillow>=9.0.0"] # Pillow for vision
+dalle = ["openai>=1.0.0", "pillow>=9.0.0"] # Needs openai client + pillow
+llamacpp = ["llama-cpp-python>=0.2.60", "requests", "httpx"] # requests/httpx might be redundant if already in core
+diffusers = [ # Heavy dependency example
+    "torch", "torchvision", "torchaudio", # Base torch libs (consider --index-url)
+    "transformers", "diffusers>=0.20.0", "accelerate", "safetensors",
+    "invisible_watermark", "pillow>=9.0.0", "compel>=2.0"
+]
+# Group ALL optional features
+all = [
+    "lollms_server[yaml]", # Redundant but explicit
+    "lollms_server[toml]",
+    "lollms_server[encryption]",
+    "lollms_server[openai]",
+    "lollms_server[ollama]",
+    "lollms_server[gemini]",
+    "lollms_server[dalle]",
+    "lollms_server[llamacpp]",
+    "lollms_server[diffusers]",
+    # Add other binding extras here as they are created
+]
+
+# Development Dependencies
 dev = [
-    "pytest>=7.0.0",         # Testing framework
-    "pytest-asyncio>=0.18.0", # For testing async code
-    "httpx>=0.23.0",         # Async HTTP client for testing API
-    "pytest-mock>=3.5.0",    # Fixture for easy mocking
-    "black",                 # Code formatter
-    "ruff",                   # Linter
-
-    # Documentation generation
-    "sphinx>=4.0",            # Core Sphinx package
-    "sphinx-rtd-theme",       # Common ReadTheDocs theme
-    "sphinx-autodoc-typehints", # Better type hint rendering in docs
+    # Testing
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.18.0",
+    "pytest-mock>=3.5.0",
+    "httpx>=0.23.0", # Needed for API client testing
+    # Config Handlers needed for testing
+    "toml>=0.10.0",
+    "pyyaml>=6.0",
+    "cryptography>=3.4",
+    # Linters & Formatters
+    "black",
+    "ruff",
+    "mypy",
+    "isort",
+    # Documentation Tools (Optional)
+    "sphinx>=4.0",
+    "sphinx-rtd-theme",
+    "sphinx-autodoc-typehints",
     "sphinx-autobuild",
     "sphinx_copybutton",
     "furo",
     "myst-parser",
-    "toml",
-    # Linting & Code Quality
-    "flake8",                 # Linter (already configured below)
-    "mypy",                   # Static type checker (already configured below)
-    "black",                  # Opinionated code formatter
-    "isort",                  # Import sorter
-    # Add other dev tools like pytest, coverage etc. here if needed
 ]
 
-# Optional: Define entry points if you want a command-line script
-# [project.scripts]
-# lollms-server = "lollms_server.main:run_cli" # Example if you add CLI arg parsing
 
 [tool.setuptools.packages.find]
-where = ["lollms_server"]  # Look for packages under "lollms_server" directory ONLY
-include = ["lollms_server*"]    # Include anything under "lollms_server"
+where = ["."] # Search from project root
+include = ["lollms_server*"] # Include the main package
+exclude = ["tests*", "lollms_configs*"] # Exclude tests and config dir from package
 
 [tool.pytest.ini_options]
-# Tell pytest to automatically handle asyncio tests
-# Requires pytest-asyncio to be installed
 asyncio_mode = "auto"
-# Optional: Add markers if you want to suppress the unknown marker warning,
-# but asyncio_mode = "auto" should make pytest aware of the marker.
-# markers = [
-#     "asyncio",
-# ]

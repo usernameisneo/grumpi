@@ -1,0 +1,51 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/openai_binding/binding_card.yaml
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the OpenAI Binding.
+
+# --- Binding Metadata ---
+type_name: "openai_binding"
+display_name: "OpenAI Compatible"
+version: "1.2.1" # Version of this binding code
+author: "ParisNeo"
+description: |
+  Binding for OpenAI's official API and other OpenAI-compatible API endpoints (like Groq, Together.ai, Mistral API, Azure OpenAI, local servers like vLLM with OpenAI endpoint). Supports text and vision models (GPT-4o, GPT-4 Vision, etc.).
+requirements: # List Python packages needed by this binding
+  - openai>=1.0.0
+  - pillow>=9.0.0 # Needed for image processing if vision models are used
+supports_streaming: true
+documentation_url: "https://platform.openai.com/docs/api-reference"
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines the settings users can put in their instance config files (e.g., my_openai_gpt4.yaml)
+instance_schema:
+  __version__: "0.1.0" # Schema version for instance config
+  type:
+    type: str
+    default: "openai_binding"
+    help: "Binding type identifier (should be 'openai_binding')."
+  binding_instance_name:
+    type: str
+    default: "openai1"
+    help: "Internal name assigned to this binding instance."
+
+  # --- OpenAI Binding Specific Settings ---
+  api_key:
+    type: str
+    nullable: true # Allow key to be omitted if OPENAI_API_KEY env var is set
+    default: null
+    secret: true # Mark as secret for potential encryption
+    help: "Your OpenAI API Key. Leave empty to use the OPENAI_API_KEY environment variable."
+  base_url:
+    type: str
+    nullable: true
+    default: null # Defaults to OpenAI official API if null
+    help: "Optional base URL for OpenAI-compatible APIs (e.g., Groq, Azure, local vLLM endpoint). Example: https://api.groq.com/openai/v1"
+  context_size:
+    type: int
+    nullable: true # Allow override, but binding attempts detection
+    default: 4096 # Default guess if detection fails or not specified
+    min_val: 64
+    help: "(Optional) Default context size override for the models used with this instance. The binding tries to detect this based on model name, but this takes precedence if set."  

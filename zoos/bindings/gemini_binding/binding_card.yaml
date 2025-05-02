@@ -1,0 +1,80 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/gemini_binding/binding_card.yaml
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the Google Gemini Binding.
+
+# --- Binding Metadata ---
+type_name: "gemini_binding"
+display_name: "Google Gemini"
+version: "1.2.1" # Version of this binding code
+author: "ParisNeo"
+description: |
+  Binding for Google's Gemini API, supporting models like Gemini Pro and Gemini Pro Vision. Requires a Google API Key.
+requirements:
+  - google-generativeai>=0.4.0 # Check latest recommended version
+  - pillow>=9.0.0 # For vision models
+supports_streaming: true
+documentation_url: "https://ai.google.dev/docs/gemini_api_overview"
+supported_output_modalities : ["text", "image"]
+supported_input_modalities : ["text"]
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines settings for instance config files (e.g., my_gemini_pro.yaml)
+instance_schema:
+  __version__: "0.1.0" # Schema version for instance config
+  type:
+    type: str
+    default: "gemini_binding"
+    help: "Binding type identifier (should be 'gemini_binding')."
+  binding_instance_name:
+    type: str
+    default: "gemini1"
+    help: "Internal name assigned to this binding instance."
+
+  # --- Gemini Binding Specific Settings ---
+  google_api_key:
+    type: str
+    nullable: true
+    default: null
+    secret: true # Mark as secret for potential encryption
+    help: "Your Google AI Studio API Key. Leave empty to use the GOOGLE_API_KEY environment variable."
+  auto_detect_limits:
+    type: bool
+    default: true
+    help: "Automatically try to detect context size and max output tokens from the model API."
+  ctx_size:
+    type: int
+    nullable: true # Only relevant if auto_detect_limits is false
+    default: 30720 # Default fallback/manual value
+    min_val: 64
+    help: "Manual context window size (input tokens). Used if auto_detect_limits is false or fails."
+  max_output_tokens:
+    type: int
+    nullable: true # Only relevant if auto_detect_limits is false
+    default: 2048 # Default fallback/manual value
+    min_val: 1
+    help: "Manual maximum output tokens. Used if auto_detect_limits is false or fails."
+
+  # Safety Settings
+  safety_setting_harassment:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Harassment content."
+  safety_setting_hate_speech:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Hate Speech content."
+  safety_setting_sexually_explicit:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Sexually Explicit content."
+  safety_setting_dangerous_content:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Dangerous Content."

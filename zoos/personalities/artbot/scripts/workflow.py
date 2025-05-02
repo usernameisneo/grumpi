@@ -84,7 +84,7 @@ async def run_workflow(prompt: str, params: Dict, context: Dict) -> List[Dict[st
              logger.warning("ArtBot: Could not determine image generation intent from LLM yes/no response. Assuming NO image generation.")
              generate_image = False
     except NotImplementedError:
-        logger.warning(f"ArtBot: Binding '{binding.binding_name}' does not support ask_yes_no. Falling back to simple keyword check (less reliable).")
+        logger.warning(f"ArtBot: Binding '{binding.binding_instance_name}' does not support ask_yes_no. Falling back to simple keyword check (less reliable).")
         # --- Fallback to keywords if ask_yes_no not implemented ---
         IMAGE_KEYWORDS_FALLBACK = ["generate image", "draw", "create a picture", "make an image", "show me a picture"]
         generate_image = any(keyword in prompt.lower() for keyword in IMAGE_KEYWORDS_FALLBACK)

@@ -1,0 +1,41 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/ollama_binding/binding_card.yaml
+# Author: ParisNeo with Gemini 2.5
+# Date: 2025-05-01
+# Description: Metadata and configuration schema for the Ollama Binding.
+
+# --- Binding Metadata ---
+type_name: "ollama_binding"
+display_name: "Ollama"
+version: "1.2.1" # Version of this binding code
+author: "ParisNeo"
+description: |
+  Binding for the Ollama inference server. Allows interacting with locally hosted language models (including vision models like LLaVA) served by Ollama.
+requirements: # List Python packages needed by this binding
+  - ollama>=0.1.7
+  - pillow>=9.0.0 # Needed for image processing if vision models are used
+supports_streaming: true
+
+documentation_url: "https://github.com/ollama/ollama-python"
+supported_output_modalities : ["text", "image"]
+supported_input_modalities : ["text"]
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines the settings users can put in their instance config files (e.g., my_ollama.yaml)
+instance_schema:
+  __version__: "0.1.0" # Schema version for instance config
+  type:
+    type: str
+    default: "ollama_binding"
+    help: "Binding type identifier (should be 'ollama_binding')."
+  binding_instance_name:
+    type: str
+    default: "ollama1"
+    help: "Internal name assigned to this binding instance."
+
+  # --- Ollama Binding Specific Settings ---
+  host:
+    type: str
+    default: "http://localhost:11434"
+    help: "URL of the running Ollama server (including http/https). Omit trailing slash."
