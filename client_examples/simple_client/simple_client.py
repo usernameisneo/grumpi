@@ -47,7 +47,7 @@ except Exception as e:
 
 
 # --- Configuration ---
-BASE_URL = "http://localhost:9600/api/v1"  # Default, can be overridden
+BASE_URL = "http://localhost:9601/api/v1"  # Default, can be overridden
 DEFAULT_TIMEOUT = 120
 DEFAULT_TTT_BINDING = None
 DEFAULT_TTT_MODEL = None

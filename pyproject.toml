@@ -11,7 +11,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lollms_server"
-version = "0.3.0" # Updated version for config changes
+version = "0.3.1" # Updated version for config changes
 authors = [
     { name="ParisNeo", email="parisneo_ai@gmail.com" },
 ]

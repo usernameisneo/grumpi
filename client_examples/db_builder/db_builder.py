@@ -14,7 +14,7 @@ DEFAULT_OUTPUT_DIR = Path("generated_data")
 
 # --- Global Variables ---
 # Values will be loaded/set by load_config or the wizard
-BASE_URL: str = "http://localhost:9600"    # Default placeholder
+BASE_URL: str = "http://localhost:9601"    # Default placeholder
 API_KEY: str | None = None                # Default placeholder
 OUTPUT_DIR: Path = DEFAULT_OUTPUT_DIR     # Default
 HEADERS_NO_STREAM: dict[str, str] = {}
@@ -41,7 +41,7 @@ def load_config() -> bool:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
 
-        BASE_URL = config.get("lollms_base_url", "http://localhost:9600").rstrip('/')
+        BASE_URL = config.get("lollms_base_url", "http://localhost:9601").rstrip('/')
         API_KEY = config.get("lollms_api_key") # Can be None or empty string
         output_dir_str = config.get("output_dir", str(DEFAULT_OUTPUT_DIR))
         OUTPUT_DIR = Path(output_dir_str)
@@ -66,7 +66,7 @@ def load_config() -> bool:
         print("   Please fix the file or delete it to run the wizard again.")
         config_needed = True # Re-run wizard maybe?
         # Fallback to defaults
-        BASE_URL = "http://localhost:9600"
+        BASE_URL = "http://localhost:9601"
         API_KEY = None
         OUTPUT_DIR = DEFAULT_OUTPUT_DIR
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,7 +77,7 @@ def load_config() -> bool:
         traceback.print_exc()
         config_needed = True # Assume config is bad, need wizard
         # Reset to safe defaults
-        BASE_URL = "http://localhost:9600"
+        BASE_URL = "http://localhost:9601"
         API_KEY = None
         OUTPUT_DIR = DEFAULT_OUTPUT_DIR
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -430,7 +430,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
     with gr.Column(visible=config_needed) as wizard_group:
         gr.Markdown("## ⚙️ Initial Configuration Needed")
         gr.Markdown(f"Please provide your `lollms-server` connection details. This will be saved to `{CONFIG_FILE}`.")
-        wizard_url_input = gr.Textbox(label="LOLLMS Server Base URL", placeholder="http://localhost:9600", value="http://localhost:9600")
+        wizard_url_input = gr.Textbox(label="LOLLMS Server Base URL", placeholder="http://localhost:9601", value="http://localhost:9601")
         wizard_api_key_input = gr.Textbox(label="LOLLMS API Key (Optional)", placeholder="Leave blank if no API key is set", type="password")
         wizard_output_dir_input = gr.Textbox(label="Output Directory for JSON files", placeholder=str(DEFAULT_OUTPUT_DIR), value=str(DEFAULT_OUTPUT_DIR))
         wizard_save_button = gr.Button("Save Configuration and Continue", variant="primary")

@@ -4,7 +4,7 @@ import json
 from sseclient import SSEClient
 
 # --- Configuration ---
-BASE_URL = "http://localhost:9600/api/v1"
+BASE_URL = "http://localhost:9601/api/v1"
 API_KEY = "user1_key_abc123" # Use a valid API key
 HEADERS = { "X-API-Key": API_KEY, "Content-Type": "application/json", "Accept": "text/event-stream" }
 

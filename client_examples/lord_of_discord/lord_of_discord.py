@@ -49,7 +49,7 @@ HISTORY_LIMIT = 15 # Max number of past messages to include in context
 
 
 DISCORD_TOKEN: Optional[str] = None
-BASE_URL: str = "http://localhost:9600"
+BASE_URL: str = "http://localhost:9601"
 API_KEY: Optional[str] = None
 DEFAULT_TIMEOUT = 120
 DEFAULT_TTT_BINDING = None
@@ -199,7 +199,7 @@ def run_configuration_wizard() -> bool:
             break
         else:
             ASCIIColors.warning("Discord Token cannot be empty.")
-    default_url = "http://localhost:9600"
+    default_url = "http://localhost:9601"
     url_input = ASCIIColors.prompt(f"Enter the LOLLMS Server Base URL [Default: {default_url}]: ").strip()
     config_data["lollms_base_url"] = url_input or default_url
     api_key_input = ASCIIColors.prompt("Enter your LOLLMS Server API Key (leave blank if none required): ", hide_input=True).strip()
@@ -230,7 +230,7 @@ def ensure_bot_config() -> bool:
         log_error(f"Invalid format in {CONFIG_FILE}. Please fix or delete it to re-run the wizard.")
         return False
     DISCORD_TOKEN = config.get("discord_token")
-    BASE_URL = config.get("lollms_base_url", "http://localhost:9600").rstrip('/') + "/api/v1"
+    BASE_URL = config.get("lollms_base_url", "http://localhost:9601").rstrip('/') + "/api/v1"
     API_KEY = config.get("lollms_api_key")
     if not DISCORD_TOKEN:
         log_error(f"ERROR: 'discord_token' missing or empty in {CONFIG_FILE}.")
@@ -1173,7 +1173,7 @@ if __name__ == "__main__":
     ASCIIColors.print("2.  **Configuration (`bot_config.json`):**")
     ASCIIColors.print(f"    - This file stores your bot token and LOLLMS server details. It should be in the same directory as this script (`{CONFIG_FILE.resolve()}`).")
     ASCIIColors.print("    - If the file is missing, the Configuration Wizard will run when you start the bot.")
-    ASCIIColors.print("    - Ensure `lollms_base_url` points to your running `lollms_server` (e.g., 'http://127.0.0.1:9600').")
+    ASCIIColors.print("    - Ensure `lollms_base_url` points to your running `lollms_server` (e.g., 'http://127.0.0.1:9601').")
     ASCIIColors.print("    - Enter the `lollms_api_key` if your server requires one, otherwise leave it blank or `null`.")
     ASCIIColors.print("3.  **Invite Bot:**")
     ASCIIColors.print("    - Go back to the Developer Portal -> Your Application -> OAuth2 -> URL Generator.")

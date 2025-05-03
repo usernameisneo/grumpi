@@ -17,7 +17,7 @@ def test_load_config_non_existent(mock_warning): # Inject mock automatically
 
     assert isinstance(config, AppConfig)
     assert config.server.host == "0.0.0.0"
-    assert config.server.port == 9600
+    assert config.server.port == 9601
     assert config.security.allowed_api_keys == []
     assert config.paths.personalities_folder.name == "personal_personalities"
     mock_warning.assert_any_call(f"Configuration file not found at {config_path}. Using default settings.")

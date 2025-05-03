@@ -17,7 +17,7 @@ This script demonstrates how to interact with the `lollms_server` API for **stre
 
 Edit the following variables at the top of `streaming_client.py`:
 
-*   `BASE_URL`: Set this to the URL of your running `lollms_server` (e.g., `"http://localhost:9600/api/v1"`).
+*   `BASE_URL`: Set this to the URL of your running `lollms_server` (e.g., `"http://localhost:9601/api/v1"`).
 *   `API_KEY`: Set this to a valid API key allowed by your server.
 *   **Payload:** Modify the `payload` dictionary within the `if __name__ == "__main__":` block to specify:
     *   `input_data`: The prompt and any other inputs.

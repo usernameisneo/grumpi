@@ -24,7 +24,7 @@ This script runs a Discord bot that acts as a frontend for the `lollms_server`. 
     ```json
     {
       "discord_token": "YOUR_DISCORD_BOT_TOKEN_HERE",
-      "lollms_base_url": "http://localhost:9600", // Base URL of lollms_server (NO /api/v1)
+      "lollms_base_url": "http://localhost:9601", // Base URL of lollms_server (NO /api/v1)
       "lollms_api_key": "YOUR_LOLLMS_SERVER_API_KEY_HERE"
     }
     ```

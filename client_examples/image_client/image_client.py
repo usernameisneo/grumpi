@@ -8,7 +8,7 @@ import os
 import time
 
 # --- Configuration ---
-BASE_URL = "http://localhost:9600/api/v1" # Your lollms_server address
+BASE_URL = "http://localhost:9601/api/v1" # Your lollms_server address
 API_KEY = "user1_key_abc123" # Use a valid API key from your config.toml
 HEADERS = {
     "X-API-Key": API_KEY,

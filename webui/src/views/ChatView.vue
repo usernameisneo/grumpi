@@ -10,7 +10,7 @@ onMounted(() => {
   if (!store.serverConnected) {
     message.value = 'Server not connected. Please connect on Home page first.'
     // Optionally try to initialize if not connected
-    // store.initialize('http://localhost:9600'); // Example: Adjust URL/API key logic
+    // store.initialize('http://localhost:9601'); // Example: Adjust URL/API key logic
   } else {
      message.value = `Connected! Found ${store.personalities.length} personalities.`
   }

@@ -29,7 +29,7 @@ This example provides a very basic web frontend (HTML, CSS, JavaScript) to inter
 
 Configuration is done directly in the web interface:
 
-*   **Server URL:** Enter the base URL of your running `lollms_server` (e.g., `http://localhost:9600`). **Do NOT include `/api/v1` here.**
+*   **Server URL:** Enter the base URL of your running `lollms_server` (e.g., `http://localhost:9601`). **Do NOT include `/api/v1` here.**
 *   **API Key:** Enter a valid API key if your server requires one.
 
 ## Running the Example

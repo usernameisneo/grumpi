@@ -29,7 +29,7 @@ export default defineConfig({
     proxy: {
       // Proxy API requests starting with /api/v1 to the FastAPI backend
       '/api/v1': {
-        target: 'http://localhost:9600', // Your FastAPI server address
+        target: 'http://localhost:9601', // Your FastAPI server address
         changeOrigin: true, // Needed for virtual hosted sites
         // secure: false, // Uncomment if backend uses self-signed certificates
         // rewrite: (path) => path.replace(/^\/api\/v1/, '/api/v1'), // Usually not needed if target includes path

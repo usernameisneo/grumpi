@@ -27,7 +27,7 @@ This script provides a more interactive console-based chat application for inter
 
 Edit the following variables near the top of `chat_app.py`:
 
-*   `BASE_URL`: Set this to the **API URL** of your running `lollms_server` (e.g., `"http://localhost:9600/api/v1"`).
+*   `BASE_URL`: Set this to the **API URL** of your running `lollms_server` (e.g., `"http://localhost:9601/api/v1"`).
 *   `API_KEY`: Set this to a valid API key allowed by your server.
 *   `DEFAULT_TTI_BINDING`, `DEFAULT_TTI_MODEL` (Optional): Set default TTI binding/model if desired, otherwise leave as `None`.
 

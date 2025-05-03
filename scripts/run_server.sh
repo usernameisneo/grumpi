@@ -4,7 +4,7 @@
 
 # Default values
 HOST="0.0.0.0"
-PORT="9600"
+PORT="9601"
 WORKERS="1"
 RELOAD="" # Set to "--reload" for development
 CONFIG_FILE="config.toml"

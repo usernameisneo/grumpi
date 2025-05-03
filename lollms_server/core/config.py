@@ -41,7 +41,7 @@ MAIN_SCHEMA: typing.Dict[str, typing.Any] = {
         "type": "section", "help": "Core server settings.",
         "schema": {
             "host": { "type": "str", "default": "0.0.0.0", "help": "Host address" },
-            "port": { "type": "int", "default": 9600, "min_val": 1, "max_val": 65535, "help": "Port number" },
+            "port": { "type": "int", "default": 9601, "min_val": 1, "max_val": 65535, "help": "Port number" },
             "allowed_origins": {
                 "type": "list", "default": [
                     "http://localhost", "http://localhost:8000", "http://localhost:5173",
@@ -56,9 +56,9 @@ MAIN_SCHEMA: typing.Dict[str, typing.Any] = {
         "schema": {
             "config_base_dir": { "type": "str", "default": "lollms_configs", "help": "Base directory for configuration files (main, bindings etc.). Relative to server root if not absolute." },
             "instance_bindings_folder": { "type": "str", "default": "bindings", "help": "Subfolder within config_base_dir for binding instance configs." },
-            "personalities_folder": { "type": "str", "default": "personal_personalities", "help": "Folder for your custom personalities (relative to server root)." },
-            "bindings_folder": { "type": "str", "default": "personal_bindings", "help": "Folder for your custom binding types (relative to server root)." },
-            "functions_folder": { "type": "str", "default": "personal_functions", "help": "Folder for your custom functions (relative to server root)." },
+            "personalities_folder": { "type": "str", "default": "personal/personalities", "help": "Folder for your custom personalities (relative to server root)." },
+            "bindings_folder": { "type": "str", "default": "personal/bindings", "help": "Folder for your custom binding types (relative to server root)." },
+            "functions_folder": { "type": "str", "default": "personal/functions", "help": "Folder for your custom functions (relative to server root)." },
             "models_folder": { "type": "str", "default": "models", "help": "Base folder for model files (relative to server root)." },
             "example_personalities_folder": { "type": "str", "default": "zoos/personalities", "nullable": True, "help": "Path to built-in example personalities (relative to server root)." },
             "example_bindings_folder": { "type": "str", "default": "zoos/bindings", "nullable": True, "help": "Path to built-in example binding types (relative to server root)." },

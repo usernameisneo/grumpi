@@ -17,7 +17,7 @@ This script demonstrates how to interact with the `lollms_server` API to perform
 
 Edit the following variables at the top of `image_client.py`:
 
-*   `BASE_URL`: Set this to the URL of your running `lollms_server` (e.g., `"http://localhost:9600/api/v1"`).
+*   `BASE_URL`: Set this to the URL of your running `lollms_server` (e.g., `"http://localhost:9601/api/v1"`).
 *   `API_KEY`: Set this to a valid `lollms_server` API key.
 *   `OUTPUT_DIR`: The directory where generated images will be saved (default: `"generated_images"` within the `client_examples` folder).
 *   **Payload:** Modify the `payload` dictionary within the `if __name__ == "__main__":` block:

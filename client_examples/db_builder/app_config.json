@@ -1,5 +1,5 @@
 {
-  "lollms_base_url": "http://localhost:9600",
+  "lollms_base_url": "http://localhost:9601",
   "lollms_api_key": "user1_key_abc123",
   "output_dir": "generated_data"
 }

@@ -20,7 +20,7 @@ This script demonstrates basic interaction with the `lollms_server` API for:
 
 Edit the following variables at the top of `simple_client.py`:
 
-*   `BASE_URL`: Set this to the URL of your running `lollms_server` (e.g., `"http://localhost:9600/api/v1"`).
+*   `BASE_URL`: Set this to the URL of your running `lollms_server` (e.g., `"http://localhost:9601/api/v1"`).
 *   `API_KEY`: Set this to a valid API key allowed by your server.
 
 ## Running the Example

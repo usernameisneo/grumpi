@@ -336,7 +336,7 @@ async def serve_vue_app_or_docs(request: Request, full_path: str):
 if __name__ == "__main__":
     # Uvicorn configuration using loaded main_config as fallback for env vars
     uvicorn_host = "0.0.0.0"
-    uvicorn_port = 9600
+    uvicorn_port = 9601
     uvicorn_workers = 1
     try:
         if main_config and hasattr(main_config, 'server'):
@@ -344,23 +344,23 @@ if __name__ == "__main__":
              try: uvicorn_port = int(os.environ.get("LOLLMS_PORT", main_config.server.port))
              except (ValueError, TypeError):
                  logger.warning(f"Invalid LOLLMS_PORT env var or config value. Using default {uvicorn_port}.")
-                 uvicorn_port = 9600 # Hardcoded default if config access fails badly
+                 uvicorn_port = 9601 # Hardcoded default if config access fails badly
 
              try: uvicorn_workers = int(os.environ.get("LOLLMS_WORKERS", 1)); uvicorn_workers = max(1, uvicorn_workers)
              except ValueError: logger.warning("Invalid LOLLMS_WORKERS env var. Using default 1."); uvicorn_workers = 1
         else:
-            logger.warning("Main config or server section not fully loaded. Using hardcoded Uvicorn defaults (0.0.0.0:9600, 1 worker).")
+            logger.warning("Main config or server section not fully loaded. Using hardcoded Uvicorn defaults (0.0.0.0:9601, 1 worker).")
             uvicorn_host = os.environ.get("LOLLMS_HOST", "0.0.0.0")
-            try: uvicorn_port = int(os.environ.get("LOLLMS_PORT", 9600))
-            except ValueError: uvicorn_port = 9600
+            try: uvicorn_port = int(os.environ.get("LOLLMS_PORT", 9601))
+            except ValueError: uvicorn_port = 9601
             try: uvicorn_workers = int(os.environ.get("LOLLMS_WORKERS", 1)); uvicorn_workers = max(1, uvicorn_workers)
             except ValueError: uvicorn_workers = 1
 
     except AttributeError as e:
         logger.error(f"Error accessing server configuration for Uvicorn: {e}. Using hardcoded defaults.")
         uvicorn_host = os.environ.get("LOLLMS_HOST", "0.0.0.0")
-        try: uvicorn_port = int(os.environ.get("LOLLMS_PORT", 9600))
-        except ValueError: uvicorn_port = 9600
+        try: uvicorn_port = int(os.environ.get("LOLLMS_PORT", 9601))
+        except ValueError: uvicorn_port = 9601
         try: uvicorn_workers = int(os.environ.get("LOLLMS_WORKERS", 1)); uvicorn_workers = max(1, uvicorn_workers)
         except ValueError: uvicorn_workers = 1
 

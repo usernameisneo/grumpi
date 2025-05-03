@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useMainStore } from '@/stores/main'
 
 const store = useMainStore()
-const serverUrl = ref('http://localhost:9600') // Default URL
+const serverUrl = ref('http://localhost:9601') // Default URL
 const apiKey = ref('')
 
 async function connect() {

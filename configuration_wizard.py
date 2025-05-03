@@ -110,7 +110,7 @@ MAIN_SCHEMA: typing.Dict[str, typing.Any] = {
         "type": "section", "help": "Core server settings.",
         "schema": {
             "host": {"type": "str", "default": "0.0.0.0", "help": "Host address"},
-            "port": {"type": "int", "default": 9600, "min_val": 1, "max_val": 65535, "help": "Port number"},
+            "port": {"type": "int", "default": 9601, "min_val": 1, "max_val": 65535, "help": "Port number"},
             "allowed_origins": {
                 "type": "list", "default": [
                     "http://localhost", "http://localhost:8000", "http://localhost:5173",
@@ -135,17 +135,17 @@ MAIN_SCHEMA: typing.Dict[str, typing.Any] = {
             },
             "personalities_folder": {
                 "type": "str",
-                "default": "personal_personalities",
+                "default": "personal/personalities",
                 "help": "Folder for your custom personalities (relative to server root)."
             },
             "bindings_folder": {
                 "type": "str",
-                "default": "personal_bindings",
+                "default": "personal/bindings",
                 "help": "Folder for your custom binding types (relative to server root)."
             },
             "functions_folder": {
                 "type": "str",
-                "default": "personal_functions",
+                "default": "personal/functions",
                 "help": "Folder for your custom functions (relative to server root)."
             },
             "models_folder": {
