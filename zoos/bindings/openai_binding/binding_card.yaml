@@ -30,6 +30,11 @@ instance_schema:
     type: str
     default: "openai1"
     help: "Internal name assigned to this binding instance."
+  default_model:
+    type: str
+    nullable: true
+    default: "gpt-4o-mini"
+    help: "The default model for the binding."
 
   # --- OpenAI Binding Specific Settings ---
   api_key:

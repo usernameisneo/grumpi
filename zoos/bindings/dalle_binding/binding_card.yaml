@@ -30,9 +30,13 @@ instance_schema:
     help: "Binding type identifier (should be 'dalle_binding')."
   binding_instance_name:
     type: str
+    nullable: true
     default: "dalle1"
     help: "Internal name assigned to this binding instance."
-
+  default_model:
+    type: str
+    default: dall-e-3
+    help: "The default model for the binding."
   # --- DALL-E Binding Specific Settings ---
   api_key:
     type: str

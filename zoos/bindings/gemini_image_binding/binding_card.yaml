@@ -1,0 +1,89 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/gemini_image_binding/binding_card.yaml
+# Author: Your Name/Team
+# Date: 2025-05-04
+# Description: Metadata and configuration schema for the Google Gemini/Imagen Image Generation Binding.
+
+# --- Binding Metadata ---
+type_name: "gemini_image_binding"
+display_name: "Google Gemini/Imagen Image Gen"
+version: "1.0.0" # Version of this binding code
+author: "lollms_server Team"
+description: |
+  Binding for Google's Gemini 2.0 Flash Experimental (Text+Image generation/editing) and Imagen 3 (High-quality Image generation) models via the Gemini API. Requires a Google API Key.
+requirements:
+  - google-generativeai>=0.4.0 # Check latest recommended version
+  - pillow>=9.0.0 # For image processing
+supports_streaming: false # Image generation is typically not streamed chunk-by-chunk
+documentation_url: "https://ai.google.dev/docs/gemini_api_overview" # Link to general Gemini API docs
+supported_output_modalities : ["image", "text"] # Gemini Flash can output text too
+supported_input_modalities : ["text", "image"] # Gemini Flash can take images
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+instance_schema:
+  __version__: "0.1.0" # Schema version for instance config
+  type:
+    type: str
+    default: "gemini_image_binding"
+    help: "Binding type identifier (should be 'gemini_image_binding')."
+  binding_instance_name:
+    type: str
+    default: "gemini_image1"
+    help: "Internal name assigned to this binding instance."
+  default_model:
+    type: str
+    nullable: true
+    default: "imagen-3.0-generate-002" # Default to the higher quality Imagen 3
+    options: ["gemini-2.0-flash-exp-image-generation", "imagen-3.0-generate-002"]
+    help: "Default image generation model to use for this instance."
+
+  # --- Gemini/Imagen Specific Settings ---
+  google_api_key:
+    type: str
+    nullable: true
+    default: null
+    secret: true # Mark as secret for potential encryption
+    help: "Your Google AI Studio API Key. Leave empty to use the GOOGLE_API_KEY environment variable."
+
+  # --- Default Imagen 3 Parameters (Optional) ---
+  # These are only used if the selected model is imagen-3...
+  default_number_of_images:
+    type: int
+    default: 1 # Default to 1 image for consistency with other bindings
+    min_val: 1
+    max_val: 4
+    help: "(Imagen 3 Only) Default number of images to generate (1-4)."
+  default_aspect_ratio:
+    type: str
+    default: "1:1"
+    options: ["1:1", "3:4", "4:3", "9:16", "16:9"]
+    help: "(Imagen 3 Only) Default aspect ratio for generated images."
+  default_person_generation:
+    type: str
+    default: "ALLOW_ADULT"
+    options: ["DONT_ALLOW", "ALLOW_ADULT"]
+    help: "(Imagen 3 Only) Default setting for generating images of people ('ALLOW_ADULT' allows adults only)."
+
+  # --- Safety Settings (Same as gemini_binding, apply to Gemini Flash) ---
+  # These primarily affect the gemini-2.0-flash model's generate_content call
+  safety_setting_harassment:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Harassment content (Gemini Flash)."
+  safety_setting_hate_speech:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Hate Speech content (Gemini Flash)."
+  safety_setting_sexually_explicit:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Sexually Explicit content (Gemini Flash)."
+  safety_setting_dangerous_content:
+    type: str
+    default: "BLOCK_MEDIUM_AND_ABOVE"
+    options: ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+    help: "Safety setting for Dangerous Content (Gemini Flash)."

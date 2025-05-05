@@ -1,15 +1,23 @@
 # lollms_server/api/models.py
+# -*- coding: utf-8 -*-
+# Project: lollms_server
+# Author: ParisNeo
+# Creation Date: 2025-05-01
+# Description: Pydantic models defining the structure of API requests and responses for lollms_server.
+# Modification Date: 2025-05-04
+# Refactored based on plan to add GetModelInfoResponse and adjust defaults handling.
+
 from pydantic import BaseModel, Field, HttpUrl, model_validator, ValidationError, ConfigDict
 from typing import List, Dict, Optional, Any, Union, Literal
 from datetime import datetime
-import base64 # For validator example
+import base64
 import importlib.metadata # For version in HealthResponse
 
 # Use TYPE_CHECKING for ConfigGuard import hint
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     try: from configguard import ConfigGuard
-    except ImportError: ConfigGuard = Any
+    except ImportError: ConfigGuard = Any # type: ignore
 
 # Use ascii_colors for logging if available
 try:
@@ -41,7 +49,7 @@ class InputData(BaseModel):
     )
     data: str = Field(..., description="The data itself (e.g., text content, base64 string, URL).")
     mime_type: Optional[str] = Field(
-        None, description="MIME type for binary data (e.g., 'image/png', 'audio/wav'). REQUIRED for binary types."
+        None, description="MIME type for binary data (e.g., 'image/png', 'audio/wav'). REQUIRED for likely binary types."
     )
     metadata: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Optional metadata like filename, description etc."
@@ -58,8 +66,7 @@ class InputData(BaseModel):
         is_likely_base64 = isinstance(data, str) and len(data) > 50 # Heuristic
 
         if is_likely_binary and is_likely_base64 and not mime_type:
-             # Allow if not strictly base64 (e.g., short placeholders)
-             try: base64.b64decode(data[:24].encode('utf-8'), validate=True) # Check start only
+             try: base64.b64decode(data[:24].encode('utf-8'), validate=True)
              except Exception: pass # Not base64, maybe ok without mime
              else: # Looks like base64, needs mime
                  raise ValueError(f"mime_type is REQUIRED for likely base64 data of type '{data_type}' (role: {values.get('role', 'N/A')})")
@@ -75,10 +82,10 @@ class OutputData(BaseModel):
         None, description="MIME type for binary data (e.g., 'image/png', 'audio/wav')."
     )
     thoughts: Optional[str] = Field(
-        None, description="Internal thoughts or reasoning from the model, excluded from the main output."
-    )    
+        None, description="Internal thoughts or reasoning from the model, parsed from <think> tags."
+    )
     metadata: Optional[Dict[str, Any]] = Field(
-        default_factory=dict, description="Optional metadata (e.g., prompt_used, model_name)."
+        default_factory=dict, description="Optional metadata (e.g., prompt_used, model_name, usage stats)."
     )
 
 
@@ -87,27 +94,24 @@ class OutputData(BaseModel):
 # - Bindings -
 class BindingTypeInfo(BaseModel):
     """Information about a discovered binding type (from its card)."""
-    type_name: str
-    display_name: Optional[str] = None
-    version: Optional[str] = None
-    author: Optional[str] = None
-    description: Optional[str] = None
-    requirements: Optional[List[str]] = Field(default_factory=list)
-    supports_streaming: Optional[bool] = None
-    # Exclude instance_schema and package_path
+    type_name: str = Field(..., description="Unique identifier for the binding type.")
+    display_name: Optional[str] = Field(None, description="User-friendly name for the binding.")
+    version: Optional[str] = Field(None, description="Version of the binding's code.")
+    author: Optional[str] = Field(None, description="Author(s) of the binding.")
+    description: Optional[str] = Field(None, description="Description of the binding's purpose and capabilities.")
+    requirements: Optional[List[str]] = Field(default_factory=list, description="Python packages required by this binding.")
+    supports_streaming: Optional[bool] = Field(None, description="Indicates if the binding natively supports streaming output.")
 
-    # Allow extra fields from the card for flexibility
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow") # Allow extra fields from card
 
 
 class BindingInstanceInfo(BaseModel):
     """Information about a configured binding instance (from its config file)."""
-    # Include type and instance name for clarity
-    type: str = Field(..., description="The type name of the binding this instance uses.")
-    binding_instance_name: str = Field(..., description="The unique name assigned to this instance.")
-    # Include other non-sensitive config keys
-    # Allow extra fields from the instance config
-    model_config = ConfigDict(extra="allow")
+    type: str = Field(..., description="The type name of the binding this instance uses (e.g., 'ollama_binding').")
+    binding_instance_name: str = Field(..., description="The unique name assigned to this instance in the configuration.")
+    # Includes other non-sensitive config keys defined in the binding's instance_schema.
+
+    model_config = ConfigDict(extra="allow") # Allow extra fields from instance config
 
 
 class ListBindingsResponse(BaseModel):
@@ -122,58 +126,60 @@ class ListBindingsResponse(BaseModel):
 # - Personalities -
 class PersonalityInfo(BaseModel):
     """Information about a loaded personality."""
-    name: str
-    author: Optional[str] = None
-    version: Optional[str] = None # Ensure string
-    description: Optional[str] = None
-    category: Optional[str] = None
-    language: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
-    icon: Optional[str] = None
-    is_scripted: bool
-    path: str # Include path for reference
+    name: str = Field(..., description="Unique name of the personality.")
+    author: Optional[str] = Field(None, description="Author of the personality.")
+    version: Optional[str] = Field(None, description="Version identifier for the personality.")
+    description: Optional[str] = Field(None, description="Brief description of the personality.")
+    category: Optional[str] = Field(None, description="Category for organizing personalities.")
+    language: Optional[str] = Field(None, description="Primary language of the personality.")
+    tags: List[str] = Field(default_factory=list, description="Keywords for searching or filtering.")
+    icon: Optional[str] = Field(None, description="Filename of the icon within the personality's assets folder.")
+    is_scripted: bool = Field(..., description="Indicates if the personality uses a Python workflow script.")
+    path: str = Field(..., description="Absolute path to the personality's directory on the server.")
 
     @model_validator(mode='before')
     @classmethod
     def ensure_version_string(cls, values):
+        """Ensures the version field is always a string."""
         if 'version' in values and values['version'] is not None:
             values['version'] = str(values['version'])
         return values
 
 
 class ListPersonalitiesResponse(BaseModel):
+    """Response model for listing available personalities."""
     personalities: Dict[str, PersonalityInfo] = Field(description="Dictionary of loaded and enabled personalities, keyed by name.")
 
 # - Functions -
 class ListFunctionsResponse(BaseModel):
+    """Response model for listing available custom functions."""
     functions: List[str] = Field(description="List of available function names (module_stem.function_name).")
 
 # - Models (Available to a Binding) -
 class ModelInfoDetails(BaseModel):
-    """Flexible model for additional details provided by list_available_models."""
+    """Flexible model for additional, binding-specific details provided by list_available_models or get_model_info."""
     model_config = ConfigDict(extra="allow")
 
 
 class ModelInfo(BaseModel):
-    """Standardized structure for reporting a single available model."""
+    """Standardized structure for reporting a single available model (used by list_available_models)."""
     name: str = Field(..., description="The name/tag/ID of the model usable in requests.")
-    size: Optional[int] = Field(None, description="Model size in bytes (if available).")
-    modified_at: Optional[datetime] = Field(None, description="Timestamp when the model was last modified (if available).")
-    quantization_level: Optional[str] = Field(None, description="Quantization level (e.g., Q4_K_M, Q8_0, F16).")
+    size: Optional[int] = Field(None, description="Model size in bytes (if applicable).")
+    modified_at: Optional[datetime] = Field(None, description="Timestamp when the model file/resource was last modified.")
+    quantization_level: Optional[str] = Field(None, description="Quantization level (e.g., Q4_K_M, Q8_0, F16, 8bit).")
     format: Optional[str] = Field(None, description="Model format (e.g., gguf, safetensors, api).")
-    family: Optional[str] = Field(None, description="Primary model family (e.g., llama, gemma, phi3).")
+    family: Optional[str] = Field(None, description="Primary model family (e.g., llama, gemma, phi3, stable-diffusion).")
     families: Optional[List[str]] = Field(None, description="List of model families it belongs to.")
     parameter_size: Optional[str] = Field(None, description="Reported parameter size (e.g., 7B, 8x7B).")
     context_size: Optional[int] = Field(None, description="Reported total context window size, if known.")
     max_output_tokens: Optional[int] = Field(None, description="Reported maximum output tokens, if known.")
     template: Optional[str] = Field(None, description="Default prompt template associated, if known.")
     license: Optional[str] = Field(None, description="Model license identifier, if known.")
-    homepage: Optional[str] = Field(None, description="URL to the model's homepage or source, if known.") # Changed to str for flexibility
+    homepage: Optional[str] = Field(None, description="URL to the model's homepage or source, if known.")
     supports_vision: bool = Field(False, description="Indicates if the model likely supports image input.")
     supports_audio: bool = Field(False, description="Indicates if the model likely supports audio input/output.")
-    details: ModelInfoDetails = Field(default_factory=dict, description="Additional non-standard details provided by the binding.")
-
-    # Add validator if needed, e.g., for homepage URL format if HttpUrl is desired
+    # supports_streaming: bool = Field(False, description="Indicates if the binding *for this model* supports streaming generation.") # Handled by BindingTypeInfo
+    details: ModelInfoDetails = Field(default_factory=dict, description="Additional binding-specific details.")
 
 
 class ListAvailableModelsResponse(BaseModel):
@@ -183,25 +189,25 @@ class ListAvailableModelsResponse(BaseModel):
 
 # - Models (Discovered in Folder) -
 class ListModelsResponse(BaseModel):
-    """Response model for listing models discovered by scanning the models folder."""
-    models: Dict[str, List[str]] = Field(description="Dictionary of discovered model files/folders, keyed by type (ttt, tti, gguf, etc.).")
+    """Response model for listing models discovered by scanning the models folder (simple file scan)."""
+    models: Dict[str, List[str]] = Field(description="Dictionary of discovered model files/folders, keyed by inferred type (ttt, tti, gguf, etc.).")
 
 
 # --- Generation Request/Response ---
 class GenerateRequest(BaseModel):
     """Request model for the /generate endpoint, supporting multimodal inputs."""
     input_data: List[InputData] = Field(
-        ..., # Make input_data required
-        description="List of input data items (text, images, audio). Include the main prompt here with type='text' and role='user_prompt'."
+        ...,
+        min_length=1, # Ensure the list is never empty
+        description="List of input data items (text, images, audio). MUST include at least one item, typically the main prompt (type='text', role='user_prompt')."
     )
     text_prompt: Optional[str] = Field( None, description="DEPRECATED. Use input_data with type='text' and role='user_prompt'.", deprecated=True )
-    personality: Optional[str] = Field(None, description="Optional: Name of the personality to use.")
-    # Changed binding_name help text
-    binding_name: Optional[str] = Field(None, description="Optional: Specific binding *instance name* (from config) to use. Overrides defaults.")
-    model_name: Optional[str] = Field(None, description="Optional: Specific model name/ID to use with the selected binding. Overrides defaults.")
+    personality: Optional[str] = Field(None, description="Optional: Name of the loaded personality to use.")
+    binding_name: Optional[str] = Field(None, description="Optional: Specific binding *instance name* (from config) to use. Overrides defaults for the generation type.")
+    model_name: Optional[str] = Field(None, description="Optional: Specific model name/ID to use. If omitted, the *binding instance's* default model is used.")
     generation_type: Literal['ttt', 'tti', 'ttv', 'ttm', 'tts', 'stt', 'i2i', 'audio2audio'] = Field( 'ttt', description="Primary type of generation task." )
-    stream: bool = Field(False, description="Whether to stream the response.")
-    parameters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Generation parameters passed to the binding.")
+    stream: bool = Field(False, description="Whether to stream the response (if supported by the binding).")
+    parameters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Generation parameters passed to the binding (e.g., max_tokens, temperature, image_size). Overrides personality/defaults.")
     functions: Optional[List[str]] = Field(None, description="Reserved for future structured function calling.")
 
     @model_validator(mode='before')
@@ -214,19 +220,14 @@ class GenerateRequest(BaseModel):
         if text_prompt:
             logger.warning("The 'text_prompt' field is deprecated. Please use 'input_data' instead.")
             text_input_dict = { 'type': 'text', 'role': 'user_prompt', 'data': text_prompt, 'mime_type': 'text/plain' }
-            # Ensure input_data is a list before appending/inserting
             if not isinstance(input_data, list): input_data = []
-            input_data.insert(0, text_input_dict) # Prepend the text prompt
+            input_data.insert(0, text_input_dict)
             values['input_data'] = input_data
-            # Remove text_prompt after processing
             if 'text_prompt' in values: values.pop('text_prompt')
 
-        # Validate final input_data
-        final_input_data = values.get('input_data') # Get potentially modified list
+        final_input_data = values.get('input_data')
         if not final_input_data or not isinstance(final_input_data, list):
             raise ValueError("Request must include a non-empty 'input_data' list.")
-        # Further validation could check if at least one 'user_prompt' exists if needed
-
         return values
 
     model_config = ConfigDict(
@@ -244,8 +245,8 @@ class GenerateRequest(BaseModel):
                         {"type": "image", "role": "style_reference", "data": "BASE64_STYLE_IMG_STRING", "mime_type": "image/jpeg"}
                     ],
                     "generation_type": "tti",
-                    "binding_name": "my_stable_diffusion_instance", # Use instance name
-                    "model_name": "sdxl-base-1.0", # Optional model for the instance
+                    "binding_name": "my_stable_diffusion_instance",
+                    "model_name": "sdxl-base-1.0",
                     "parameters": { "width": 1024, "height": 768, "guidance_scale": 7.5 }
                 }
             ]
@@ -257,49 +258,81 @@ class GenerateResponse(BaseModel):
     """Standard non-streaming response wrapper."""
     personality: Optional[str] = Field(None, description="Name of the personality used, if any.")
     request_id: Optional[str] = Field(None, description="Unique ID generated for this request.")
-    output: List[OutputData] = Field(..., description="List of generated outputs (text, images, etc.).")
+    output: List[OutputData] = Field(..., description="List of generated outputs (text, images, audio, etc.).")
     execution_time: Optional[float] = Field(None, description="Total time taken for the generation in seconds.")
 
 
 class StreamChunk(BaseModel):
     """Model for a chunk in a streaming response."""
     type: Literal["chunk", "final", "error", "info", "function_call"] = Field(..., description="Type of the stream message.")
-    content: Optional[Any] = Field(None, description="The content of the chunk (text, audio chunk, error message, etc.). For 'final' type, this should be List[OutputData].")
+    content: Optional[Any] = Field(None, description="The content of the chunk (e.g., text snippet, audio chunk, error message). For 'final' type, this should be List[OutputData].")
+    thoughts: Optional[str] = Field(None, description="Internal thoughts or reasoning relevant to this chunk, parsed from <think> tags.")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Optional metadata associated with the chunk or final response.")
 
 
 # --- Tokenizer Endpoint Models ---
 class TokenizeRequest(BaseModel):
+    """Request model for tokenizing text."""
     text: str = Field(..., description="The text to tokenize.")
-    binding_name: str = Field(..., description="Logical name of the binding *instance* to use.") # Clarified instance
-    add_bos: bool = Field(True, description="Whether to add the beginning-of-sentence token.")
-    add_eos: bool = Field(False, description="Whether to add the end-of-sentence token.")
+    binding_name: Optional[str] = Field(None, description="Logical name of the binding *instance* to use. If omitted, uses default TTT binding.")
+    model_name: Optional[str] = Field(None, description="Optional: Specific model name. If omitted, uses the binding instance's default model.")
+    add_bos: bool = Field(False, description="Whether to add the beginning-of-sentence token (if supported by tokenizer).")
+    add_eos: bool = Field(False, description="Whether to add the end-of-sentence token (if supported by tokenizer).")
 
 class TokenizeResponse(BaseModel):
+    """Response model for tokenizing text."""
     tokens: List[int] = Field(..., description="List of token IDs.")
     count: int = Field(..., description="Number of tokens generated.")
 
 class DetokenizeRequest(BaseModel):
+    """Request model for detokenizing tokens."""
     tokens: List[int] = Field(..., description="List of token IDs to detokenize.")
-    binding_name: str = Field(..., description="Logical name of the binding *instance* to use.") # Clarified instance
+    binding_name: Optional[str] = Field(None, description="Logical name of the binding *instance* to use. If omitted, uses default TTT binding.")
+    model_name: Optional[str] = Field(None, description="Optional: Specific model name. If omitted, uses the binding instance's default model.")
 
 class DetokenizeResponse(BaseModel):
+    """Response model for detokenizing tokens."""
     text: str = Field(..., description="The detokenized text.")
 
 class CountTokensRequest(BaseModel):
+    """Request model for counting tokens."""
     text: str = Field(..., description="The text to count tokens for.")
-    binding_name: str = Field(..., description="Logical name of the binding *instance* to use.") # Clarified instance
+    binding_name: Optional[str] = Field(None, description="Logical name of the binding *instance* to use. If omitted, uses default TTT binding.")
+    model_name: Optional[str] = Field(None, description="Optional: Specific model name. If omitted, uses the binding instance's default model.")
+    add_bos: bool = Field(False, description="Whether to include BOS token in count (if applicable).")
+    add_eos: bool = Field(False, description="Whether to include EOS token in count (if applicable).")
 
 class CountTokensResponse(BaseModel):
+    """Response model for counting tokens."""
     count: int = Field(..., description="The number of tokens in the provided text.")
 
-# --- Model Info Endpoint Response Model ---
+# --- Default Bindings / Model Info Endpoint Models ---
+
 class GetModelInfoResponse(BaseModel):
-    """Response model for the /get_model_info/{binding_instance_name} endpoint."""
-    binding_instance_name: str = Field(..., description="Logical name of the binding instance queried.") # Renamed field
-    model_name: Optional[str] = Field(None, description="Name of the currently loaded model, if any.")
-    context_size: Optional[int] = Field(None, description="Context window size of the loaded model.")
-    max_output_tokens: Optional[int] = Field(None, description="Maximum output tokens for the loaded model.")
-    supports_vision: bool = Field(False, description="Does the loaded model support vision?")
-    supports_audio: bool = Field(False, description="Does the loaded model support audio?")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Other details about the loaded model provided by the binding.")
+    """Response model for the /get_model_info endpoint."""
+    binding_instance_name: str = Field(..., description="Logical name of the binding instance providing the info.")
+    model_name: str = Field(..., description="The name/identifier of the model this information pertains to.")
+    model_type: Optional[Literal['ttt', 'tti', 'tts', 'stt', 'ttv', 'ttm', 'vlm', 'generic']] = Field(None, description="The primary modality type of the model.")
+    context_size: Optional[int] = Field(None, description="Context window size (tokens), if applicable.")
+    max_output_tokens: Optional[int] = Field(None, description="Maximum number of output tokens supported, if fixed and known.")
+    supports_vision: bool = Field(False, description="Does the model support image input?")
+    supports_audio: bool = Field(False, description="Does the model support audio input/output?")
+    supports_streaming: bool = Field(False, description="Does the binding support streaming generation for this model?")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Additional binding-specific details about the model.")
+
+    model_config = ConfigDict(extra="allow") # Allow extra fields in 'details' if binding adds them
+
+
+class ListActiveBindingsResponse(BaseModel):
+    """Response model for listing successfully loaded binding instances."""
+    bindings: Dict[str, BindingInstanceInfo] = Field(
+        description="Dictionary of currently active binding instances, keyed by instance_name."
+    )
+
+class GetDefaultBindingsResponse(BaseModel):
+    """Response model for getting the current default binding instance names and parameters."""
+    defaults: Dict[str, Optional[Union[str, int]]] = Field(
+        description="Dictionary mapping configuration keys (e.g., 'ttt_binding', 'tti_binding', 'default_context_size') to their currently configured values."
+    )
+
+# REMOVED GetContextLengthResponse as it's superseded by GetModelInfoResponse

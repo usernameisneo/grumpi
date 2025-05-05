@@ -1,9 +1,11 @@
-# encoding:utf-8
+# lollms_server/bindings/dalle_binding/__init__.py
+# -*- coding: utf-8 -*-
 # Project: lollms_server
-# File: zoos/bindings/dalle_binding/__init__.py
 # Author: ParisNeo with Gemini 2.5
 # Date: 2025-05-01
 # Description: Binding implementation for OpenAI's DALL-E image generation.
+# Modification Date: 2025-05-04
+# Refactored model info endpoint, default model handling.
 
 import asyncio
 import os
@@ -15,8 +17,7 @@ from datetime import datetime # For model info listing
 # Use pipmaster if needed, or rely on main installation
 try:
     import pipmaster as pm
-    pm.install_if_missing("openai")
-    pm.install_if_missing("pillow")
+    pm.ensure_packages(["openai", "pillow"])
 except ImportError:
     pass # Assume installed or handle import error below
 
@@ -24,12 +25,15 @@ try:
     from openai import AsyncOpenAI, OpenAIError, APIConnectionError, RateLimitError, NotFoundError, BadRequestError
     from PIL import Image # Optional: for potentially validating base64 data
     openai_installed = True
-except ImportError:
+    pillow_installed = True
+except ImportError as e:
     # Define placeholders if import fails
     AsyncOpenAI = None; OpenAIError = Exception; APIConnectionError = Exception # type: ignore
     RateLimitError = Exception; NotFoundError = Exception; BadRequestError = Exception # type: ignore
     Image = None; BytesIO = None # type: ignore
     openai_installed = False
+    pillow_installed = False
+    _import_error_msg = str(e)
 
 try:
     import ascii_colors as logging # Use logging alias
@@ -41,6 +45,7 @@ except ImportError:
 
 from lollms_server.core.bindings import Binding
 from lollms_server.core.resource_manager import ResourceManager
+from lollms_server.utils.helpers import parse_thought_tags # Although not used here, keep for consistency
 
 # Use TYPE_CHECKING for API model imports
 from typing import TYPE_CHECKING
@@ -54,7 +59,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Known DALL-E models and their typical supported sizes/features
-DALLE_MODELS = {
+DALLE_MODELS_INFO = {
     "dall-e-3": {
         "sizes": ["1024x1024", "1792x1024", "1024x1792"],
         "qualities": ["standard", "hd"],
@@ -83,9 +88,12 @@ class DallEBinding(Binding):
                     validated against the schema in binding_card.yaml.
             resource_manager: The shared resource manager instance.
         """
-        super().__init__(config, resource_manager)
-        if not openai_installed or not AsyncOpenAI:
-            raise ImportError("DALL-E binding requires the 'openai' (>=1.0.0) and 'pillow' libraries.")
+        super().__init__(config, resource_manager) # Sets self.config etc.
+        if not openai_installed:
+            raise ImportError(f"DALL-E binding requires the 'openai' library (>=1.0.0). Error: {_import_error_msg}")
+        if not pillow_installed:
+             logger.warning("Pillow library not found. Image validation disabled.")
+
 
         # --- Configuration Loading from instance config dict (self.config) ---
         self.api_key = self.config.get("api_key") # Get from instance config first
@@ -97,12 +105,13 @@ class DallEBinding(Binding):
             if self.api_key:
                 logger.info(f"DALL-E Binding '{self.binding_instance_name}': Loaded API key from OPENAI_API_KEY environment variable.")
 
-        # Default generation parameters from instance config
-        # Use defaults from schema if not present in instance config dict
-        self.default_model = self.config.get("model", "dall-e-3")
+        # --- Default Parameters from Instance Config ---
+        # self.default_model_name is already set by the parent class __init__
+        # from self.config.get("model")
+        self.default_model_name= self.config.get("default_model", "dall-e-3")
         self.default_size = self.config.get("default_size", "1024x1024")
         self.default_quality = self.config.get("default_quality", "standard")
-        self.default_style = self.config.get("default_style", "vivid") # Only applies to DALL-E 3
+        self.default_style = self.config.get("default_style", "vivid")
 
         # --- Validation and Client Initialization ---
         if not self.api_key:
@@ -117,7 +126,8 @@ class DallEBinding(Binding):
                   trace_exception(e)
                   self.client = None # Mark client as failed
 
-        self.model_name: Optional[str] = None # Will be set by load_model to self.default_model initially
+        # self.model_name stores the currently *active* model for this instance (set by load_model)
+
 
     # --- Binding Capabilities ---
     def get_supported_input_modalities(self) -> List[str]:
@@ -131,33 +141,23 @@ class DallEBinding(Binding):
 
     async def health_check(self) -> Tuple[bool, str]:
         """Checks API key validity by trying to list models."""
-        if not self.client:
-             return False, f"OpenAI client initialization failed for DALL-E instance '{self.binding_instance_name}'."
-        if not self.api_key:
-            return False, "API key is not configured for this instance."
+        # (Implementation remains the same)
+        if not self.client: return False, f"OpenAI client initialization failed for DALL-E instance '{self.binding_instance_name}'."
+        if not self.api_key: return False, "API key is not configured for this instance."
         try:
             logger.info(f"DALL-E Binding '{self.binding_instance_name}': Performing health check (listing models)...")
-            # Use a timeout
             await asyncio.wait_for(self.client.models.list(), timeout=10.0)
             logger.info(f"DALL-E Binding '{self.binding_instance_name}': Health check successful (connection OK).")
             return True, "Connection successful."
-        except APIConnectionError as e:
-             logger.error(f"DALL-E Binding '{self.binding_instance_name}': Health check failed (Connection Error): {e}")
-             return False, f"API Connection Error: {e}"
-        except RateLimitError as e:
-             logger.warning(f"DALL-E Binding '{self.binding_instance_name}': Health check hit rate limit: {e}")
-             return True, f"Rate limit hit during check, but connection seems ok: {e}"
+        except APIConnectionError as e: logger.error(f"DALL-E '{self.binding_instance_name}': Health check failed (Conn Err): {e}"); return False, f"API Connection Error: {e}"
+        except RateLimitError as e: logger.warning(f"DALL-E '{self.binding_instance_name}': Health check rate limit: {e}"); return True, f"Rate limit hit, but connection ok: {e}"
         except OpenAIError as e:
-             logger.error(f"DALL-E Binding '{self.binding_instance_name}': Health check failed (OpenAI Error): {e}")
-             if hasattr(e, 'status_code') and e.status_code == 401:
-                  return False, f"Authentication Error: Invalid API Key? ({e})"
-             return False, f"OpenAI API Error: {e}"
-        except asyncio.TimeoutError:
-            logger.error(f"DALL-E Health check timed out for '{self.binding_instance_name}'.")
-            return False, "Connection timed out."
-        except Exception as e:
-             logger.error(f"DALL-E Binding '{self.binding_instance_name}': Health check failed (Unexpected Error): {e}", exc_info=True)
-             return False, f"Unexpected Error: {e}"
+             logger.error(f"DALL-E '{self.binding_instance_name}': Health check failed (OpenAI Err): {e}")
+             status = getattr(e, 'status_code', 'N/A')
+             if status == 401: return False, f"Authentication Error: Invalid API Key? ({e})"
+             return False, f"OpenAI API Error ({status}): {e}"
+        except asyncio.TimeoutError: logger.error(f"DALL-E Health check timed out for '{self.binding_instance_name}'."); return False, "Connection timed out."
+        except Exception as e: logger.error(f"DALL-E '{self.binding_instance_name}': Health check failed (Unexpected Err): {e}", exc_info=True); return False, f"Unexpected Error: {e}"
 
     def get_resource_requirements(self, model_name: Optional[str] = None) -> Dict[str, Any]:
         """DALL-E binding does not use local GPU resources."""
@@ -165,25 +165,28 @@ class DallEBinding(Binding):
 
     async def load_model(self, model_name: str) -> bool:
         """
-        Sets the DALL-E model version to use for this instance.
-        For DALL-E, this mainly validates the name against known models.
+        Sets the DALL-E model version to use for this instance. Validates against known models.
+        Uses instance default ('model' field in config) as fallback if requested model is invalid.
         """
         async with self._load_lock:
             logger.info(f"DALL-E Binding '{self.binding_instance_name}': Setting active model to '{model_name}'.")
-            if model_name not in DALLE_MODELS:
-                 # Try using the default model from config if the requested one is invalid
-                 logger.warning(f"Requested model '{model_name}' not in known DALL-E models {list(DALLE_MODELS.keys())}. Falling back to instance default '{self.default_model}'.")
-                 model_to_set = self.default_model
-                 if model_to_set not in DALLE_MODELS:
-                     logger.error(f"Instance default model '{model_to_set}' is also invalid. Cannot load.")
-                     self.model_name = None
-                     self._model_loaded = False
-                     return False
-            else:
-                 model_to_set = model_name
+            target_model = model_name
 
-            self.model_name = model_to_set
-            self._model_loaded = True
+            if target_model not in DALLE_MODELS_INFO:
+                 # Use instance default from config if the requested one is invalid
+                 instance_default = self.default_model_name # From parent __init__
+                 logger.warning(f"Requested model '{target_model}' not in known DALL-E models {list(DALLE_MODELS_INFO.keys())}. Trying instance default '{instance_default}'.")
+                 target_model = instance_default # Fallback to instance default
+
+                 # Check if instance default is valid
+                 if not target_model or target_model not in DALLE_MODELS_INFO:
+                     logger.error(f"Instance default model '{target_model}' is also invalid or missing. Cannot activate model.")
+                     await self.unload_model() # Ensure state is reset
+                     return False
+
+            # Set the validated model name
+            self.model_name = target_model
+            self._model_loaded = True # Mark as "loaded" (ready to use)
             logger.info(f"DALL-E Binding '{self.binding_instance_name}': Active model set to '{self.model_name}'.")
             return True
 
@@ -198,24 +201,15 @@ class DallEBinding(Binding):
 
     async def list_available_models(self) -> List[Dict[str, Any]]:
         """Returns a list of known DALL-E models supported by this binding."""
+        # (Implementation remains the same)
         logger.info(f"DALL-E Binding '{self.binding_instance_name}': Listing supported models.")
         model_list = []
-        for name, details in DALLE_MODELS.items():
+        for name, details in DALLE_MODELS_INFO.items():
             model_list.append({
-                "name": name,
-                "format": "api",
-                "size": None,
-                "modified_at": None, # Creation date not relevant here
-                "supports_vision": True, # They generate images
-                "supports_audio": False,
-                "details": details, # Include supported sizes, qualities etc.
-                # Add None for other fields as they don't apply directly
-                "context_size": None,
-                "max_output_tokens": None,
-                "family": "dall-e",
-                "families": ["dall-e"],
-                "parameter_size": None,
-                "quantization_level": None,
+                "name": name, "format": "api", "size": None, "modified_at": None,
+                "supports_vision": True, "supports_audio": False, "details": details,
+                "context_size": None, "max_output_tokens": None, "family": "dall-e",
+                "families": ["dall-e"], "parameter_size": None, "quantization_level": None,
             })
         return model_list
 
@@ -228,123 +222,72 @@ class DallEBinding(Binding):
     ) -> Union[str, Dict[str, Any], List[Dict[str, Any]]]: # Return List[OutputData]-like
         """Generates an image using the DALL-E API."""
         if not self.client: raise RuntimeError(f"OpenAI client not initialized for DALL-E instance '{self.binding_instance_name}'.")
-        if not self._model_loaded or not self.model_name:
-            raise RuntimeError(f"DALL-E model not selected for instance '{self.binding_instance_name}'. Call load_model first.")
-        if not self.api_key:
-            raise RuntimeError(f"API key not configured for DALL-E instance '{self.binding_instance_name}'.")
+        if not self.api_key: raise RuntimeError(f"API key not configured for DALL-E instance '{self.binding_instance_name}'.")
 
-        # Verify generation type is appropriate (though DALL-E binding is implicitly TTI)
+        # Use the currently active model set by load_model
+        target_model_name = self.model_name
+        if not self._model_loaded or not target_model_name:
+            # Try loading the instance default model automatically if none active
+            instance_default = self.default_model_name
+            if instance_default:
+                logger.warning(f"No model active for '{self.binding_instance_name}'. Attempting to activate instance default '{instance_default}'.")
+                if await self.load_model(instance_default):
+                    target_model_name = instance_default
+                else:
+                    raise RuntimeError(f"Failed to activate default model '{instance_default}' for DALL-E instance '{self.binding_instance_name}'.")
+            else:
+                 raise RuntimeError(f"No model active or configured as default for DALL-E instance '{self.binding_instance_name}'. Call load_model or set default.")
+
+        # Verify generation type is appropriate
         gen_type = request_info.get("generation_type", "tti")
         if gen_type != 'tti':
              logger.warning(f"DALL-E Binding '{self.binding_instance_name}': Received non-TTI request type '{gen_type}'. Proceeding as TTI.")
 
-        model_info = DALLE_MODELS.get(self.model_name, {})
-        if not model_info: # Should not happen if load_model worked
-             raise RuntimeError(f"Internal error: Active model '{self.model_name}' has no info.")
+        model_info = DALLE_MODELS_INFO.get(target_model_name, {})
+        if not model_info: raise RuntimeError(f"Internal error: Active model '{target_model_name}' has no info.")
 
-        # --- Determine Parameters ---
-        n = params.get("n", 1) # Number of images
-        max_n = model_info.get("max_n", 1)
-        if n > max_n:
-             logger.warning(f"Instance '{self.binding_instance_name}': Requested n={n} images, but model {self.model_name} supports max {max_n}. Clamping to {max_n}.")
-             n = max_n
+        # --- Determine Parameters (remains the same, uses instance defaults as fallback) ---
+        n = params.get("n", 1); max_n = model_info.get("max_n", 1)
+        if n > max_n: logger.warning(f"Clamping n={n} to max {max_n} for {target_model_name}."); n = max_n
+        size = params.get("size", self.default_size); supported_sizes = model_info.get("sizes", [self.default_size])
+        if size not in supported_sizes: logger.warning(f"Size {size} invalid for {target_model_name}. Using default: {self.default_size}"); size = self.default_size
+        quality = params.get("quality", self.default_quality); supported_qualities = model_info.get("qualities", [self.default_quality])
+        if quality not in supported_qualities: logger.warning(f"Quality {quality} invalid for {target_model_name}. Using default: {self.default_quality}"); quality = self.default_quality
+        style = params.get("style", self.default_style); supported_styles = model_info.get("styles", [self.default_style])
+        if target_model_name == "dall-e-2": style = None
+        elif style not in supported_styles: logger.warning(f"Style {style} invalid for {target_model_name}. Using default: {self.default_style}"); style = self.default_style
 
-        size = params.get("size", self.default_size) # Image size
-        supported_sizes = model_info.get("sizes", [self.default_size])
-        if size not in supported_sizes:
-             logger.warning(f"Instance '{self.binding_instance_name}': Requested size {size} not supported by {self.model_name} (Supports: {supported_sizes}). Using instance default: {self.default_size}")
-             size = self.default_size # Fallback to instance default
-
-        quality = params.get("quality", self.default_quality) # Image quality
-        supported_qualities = model_info.get("qualities", [self.default_quality])
-        if quality not in supported_qualities:
-             logger.warning(f"Instance '{self.binding_instance_name}': Requested quality {quality} not supported by {self.model_name} (Supports: {supported_qualities}). Using instance default: {self.default_quality}")
-             quality = self.default_quality
-
-        style = params.get("style", self.default_style) # Image style
-        supported_styles = model_info.get("styles", [self.default_style])
-        if self.model_name == "dall-e-2": # Style only applies to DALL-E 3
-             style = None
-        elif style not in supported_styles:
-             logger.warning(f"Instance '{self.binding_instance_name}': Requested style {style} not supported by {self.model_name} (Supports: {supported_styles}). Using instance default: {self.default_style}")
-             style = self.default_style
-
-        logger.info(f"DALL-E Binding '{self.binding_instance_name}': Generating image with model '{self.model_name}', size={size}, quality='{quality}', style='{style}', n={n}...")
+        logger.info(f"DALL-E Binding '{self.binding_instance_name}': Generating image with model '{target_model_name}', size={size}, quality='{quality}', style='{style}', n={n}...")
 
         try:
             # --- API Call ---
-            # Use asyncio.wait_for to add a timeout safeguard
-            api_call_task = self.client.images.generate(
-                model=self.model_name,
-                prompt=prompt,
-                n=n,
-                size=size, # type: ignore # Ignore potential type error if size values aren't literals
-                quality=quality, # type: ignore # Ignore potential type error
-                style=style, # type: ignore # Ignore potential type error
-                response_format="b64_json" # Force base64 response
-            )
-            # Example timeout (adjust as needed)
-            timeout_seconds = 180 # 3 minutes
+            api_call_task = self.client.images.generate( model=target_model_name, prompt=prompt, n=n, size=size, quality=quality, style=style, response_format="b64_json") # type: ignore
+            timeout_seconds = 180
             response = await asyncio.wait_for(api_call_task, timeout=timeout_seconds)
-            # --- End API Call ---
 
+            if not response.data or not all(img.b64_json for img in response.data): raise RuntimeError("Invalid response received from DALL-E API")
 
-            if not response.data or not all(img.b64_json for img in response.data):
-                 logger.error(f"DALL-E Binding '{self.binding_instance_name}': API response did not contain base64 image data for all images.")
-                 raise RuntimeError("Invalid response received from DALL-E API")
-
-            # --- Process Response ---
-            # Return a list of OutputData-like dicts, one for each generated image
+            # --- Process Response (remains the same) ---
             output_list = []
             for image_data in response.data:
-                if not image_data.b64_json: continue # Skip if one image failed
+                if not image_data.b64_json: continue
                 image_base64 = image_data.b64_json
-                revised_prompt = image_data.revised_prompt # DALL-E 3 might revise prompts
                 image_metadata = {
-                        "prompt_used": prompt,
-                        "revised_prompt": revised_prompt,
-                        "model": self.model_name,
-                        "size": size,
-                        "quality": quality,
-                        "style": style,
-                        "binding_instance": self.binding_instance_name,
-                        # Add other metadata if needed
-                    }
-
-                # Optional: Validate image data using Pillow
-                if Image and BytesIO:
-                    try:
-                        img_bytes = base64.b64decode(image_base64)
-                        img = Image.open(BytesIO(img_bytes))
-                        logger.debug(f" -> Generated image validated ({img.format}, {img.size}).")
-                        image_metadata["image_format"] = img.format
-                        image_metadata["image_size_pixels"] = img.size
-                        img.close() # Close image resource
-                    except Exception as img_err:
-                         logger.warning(f"Could not validate generated base64 data as image: {img_err}")
-
-                output_list.append({
-                    "type": "image",
-                    "data": image_base64,
-                    "mime_type": "image/png", # DALL-E returns PNG
-                    "metadata": image_metadata
-                })
+                        "prompt_used": prompt, "revised_prompt": image_data.revised_prompt, "model": target_model_name,
+                        "size": size, "quality": quality, "style": style, "binding_instance": self.binding_instance_name,
+                }
+                if pillow_installed and Image and BytesIO:
+                    try: img_bytes = base64.b64decode(image_base64); img = Image.open(BytesIO(img_bytes)); logger.debug(f" -> Validated image ({img.format}, {img.size})."); image_metadata["image_format"] = img.format; image_metadata["image_size_pixels"] = img.size; img.close()
+                    except Exception as img_err: logger.warning(f"Could not validate generated base64 data as image: {img_err}")
+                output_list.append({ "type": "image", "data": image_base64, "mime_type": "image/png", "metadata": image_metadata })
 
             logger.info(f"DALL-E Binding '{self.binding_instance_name}': Generated {len(output_list)} image(s) successfully.")
             return output_list # Return the list directly
 
-        except BadRequestError as e: # Catch specific errors like disallowed prompts
-             logger.error(f"DALL-E Binding '{self.binding_instance_name}': Bad Request Error (e.g., content policy): {e}")
-             raise ValueError(f"DALL-E Request Error: {e}") from e # Raise ValueError for client error
-        except asyncio.TimeoutError:
-            logger.error(f"DALL-E Binding '{self.binding_instance_name}': Image generation timed out after {timeout_seconds}s.")
-            raise RuntimeError("DALL-E API call timed out.")
-        except OpenAIError as e:
-             logger.error(f"DALL-E Binding '{self.binding_instance_name}': API Error during generation: {e}")
-             raise RuntimeError(f"DALL-E API Error: {e}") from e
-        except Exception as e:
-             logger.error(f"DALL-E Binding '{self.binding_instance_name}': Unexpected error during generation: {e}", exc_info=True)
-             raise RuntimeError(f"Unexpected error: {e}") from e
+        except BadRequestError as e: logger.error(f"DALL-E '{self.binding_instance_name}': Bad Request Error (e.g., content policy): {e}"); raise ValueError(f"DALL-E Request Error: {e}") from e
+        except asyncio.TimeoutError: logger.error(f"DALL-E '{self.binding_instance_name}': Generation timed out after {timeout_seconds}s."); raise RuntimeError("DALL-E API call timed out.")
+        except OpenAIError as e: logger.error(f"DALL-E '{self.binding_instance_name}': API Error during generation: {e}"); raise RuntimeError(f"DALL-E API Error: {e}") from e
+        except Exception as e: logger.error(f"DALL-E '{self.binding_instance_name}': Unexpected error during generation: {e}", exc_info=True); raise RuntimeError(f"Unexpected error: {e}") from e
 
     async def generate_stream(
         self,
@@ -354,65 +297,76 @@ class DallEBinding(Binding):
         multimodal_data: Optional[List['InputData']] = None
     ) -> AsyncGenerator[Dict[str, Any], None]: # Yields StreamChunk-like dicts
         """Simulates streaming for DALL-E image generation."""
+        # (Implementation remains the same)
         logger.info(f"DALL-E Binding '{self.binding_instance_name}': Simulating stream for image generation.")
-        # Yield an initial info message
-        yield {"type": "info", "content": {"status": "starting_image_generation", "model": self.model_name, "prompt": prompt}}
-
+        target_model = self.model_name or self.default_model_name or "dall-e-unknown"
+        yield {"type": "info", "content": {"status": "starting_image_generation", "model": target_model, "prompt": prompt}}
         try:
-            # Call the non-streaming method to get the result (which is List[OutputData]-like)
-            image_result_list = await self.generate(
-                prompt=prompt,
-                params=params,
-                request_info=request_info,
-                multimodal_data=multimodal_data
-            )
-
-            # Check if generate returned the expected list format
+            image_result_list = await self.generate( prompt=prompt, params=params, request_info=request_info, multimodal_data=multimodal_data )
             if isinstance(image_result_list, list):
-                # Yield the final chunk containing the List[OutputData]-like structure
-                final_metadata = {"status": "success"}
-                # If list is not empty, try to get metadata from first image
-                if image_result_list:
-                    final_metadata.update(image_result_list[0].get("metadata", {}))
-
+                final_metadata = {"status": "success"};
+                if image_result_list: final_metadata.update(image_result_list[0].get("metadata", {}))
                 yield {"type": "final", "content": image_result_list, "metadata": final_metadata}
-                logger.info(f"DALL-E Binding '{self.binding_instance_name}': Simulated stream finished successfully.")
-            else: # Handle unexpected return type from generate
-                 raise TypeError(f"generate() returned unexpected type: {type(image_result_list)}")
-
+                logger.info(f"DALL-E '{self.binding_instance_name}': Simulated stream finished successfully.")
+            else: raise TypeError(f"generate() returned unexpected type: {type(image_result_list)}")
         except (ValueError, RuntimeError, OpenAIError, Exception) as e:
-            logger.error(f"DALL-E Binding '{self.binding_instance_name}': Error during simulated stream's generate call: {e}", exc_info=True)
+            logger.error(f"DALL-E '{self.binding_instance_name}': Error during simulated stream's generate call: {e}", exc_info=True)
             error_content = f"Image generation failed: {str(e)}"
             yield {"type": "error", "content": error_content}
-            # Yield a final chunk indicating failure
             yield {"type": "final", "content": [{"type": "error", "data": error_content}], "metadata": {"status": "failed"}}
 
     # --- Tokenizer / Info Methods (Not Applicable for DALL-E) ---
-    async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
+    async def tokenize(self, text: str, add_bos: bool = False, add_eos: bool = False, model_name: Optional[str] = None) -> List[int]:
         """Tokenization not applicable for DALL-E."""
         raise NotImplementedError("DALL-E binding does not support tokenization.")
 
-    async def detokenize(self, tokens: List[int]) -> str:
+    async def detokenize(self, tokens: List[int], model_name: Optional[str] = None) -> str:
         """Detokenization not applicable for DALL-E."""
         raise NotImplementedError("DALL-E binding does not support detokenization.")
 
-    async def get_current_model_info(self) -> Dict[str, Any]:
-        """Returns information about the currently loaded DALL-E model."""
-        if not self._model_loaded or not self.model_name:
-            return { "name": None, "context_size": None, "max_output_tokens": None, "supports_vision": True, "supports_audio": False, "details": {} }
+    async def get_model_info(self, model_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Returns information about a specific DALL-E model or the instance's active/default model.
+        """
+        target_model = model_name
 
-        model_details = DALLE_MODELS.get(self.model_name, {})
-        return {
-            "name": self.model_name,
+        if target_model is None:
+            # If no specific model requested, use the currently active one for the instance
+            if self._model_loaded and self.model_name:
+                target_model = self.model_name
+                logger.debug(f"Getting info for currently active model: {target_model}")
+            # If none is active, use the instance's configured default
+            elif self.default_model_name:
+                target_model = self.default_model_name
+                logger.debug(f"No model active, getting info for instance default: {target_model}")
+            else:
+                logger.warning(f"DALL-E instance '{self.binding_instance_name}': Cannot get model info - no model specified, active, or configured as default.")
+                return { "binding_instance_name": self.binding_instance_name, "model_name": None, "error": "No active or default model set for instance.", "details": {} }
+
+        # Check if the target model is known
+        if target_model not in DALLE_MODELS_INFO:
+            logger.error(f"DALL-E model '{target_model}' is not recognized by this binding.")
+            return { "binding_instance_name": self.binding_instance_name, "model_name": target_model, "error": "Model name not recognized.", "details": {} }
+
+        # Get details from the constant
+        model_details = DALLE_MODELS_INFO[target_model]
+
+        # Populate the standardized response structure
+        info = {
+            "binding_instance_name": self.binding_instance_name,
+            "model_name": target_model,
+            "model_type": 'tti', # DALL-E is primarily Text-to-Image
             "context_size": None, # Not applicable
             "max_output_tokens": None, # Not applicable
-            "supports_vision": True,
+            "supports_vision": True, # It generates images
             "supports_audio": False,
+            "supports_streaming": False, # Based on binding card
             "details": {
-                "info": f"Active DALL-E model for instance '{self.binding_instance_name}' is '{self.model_name}'.",
+                "info": f"Details for DALL-E model '{target_model}' via instance '{self.binding_instance_name}'.",
                 "supported_sizes": model_details.get("sizes"),
                 "supported_qualities": model_details.get("qualities"),
                 "supported_styles": model_details.get("styles"),
                 "max_images_per_request": model_details.get("max_n")
             }
         }
+        return info

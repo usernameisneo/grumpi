@@ -11,7 +11,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lollms_server"
-version = "0.3.1" # Updated version for config changes
+version = "0.3.2" # Updated version for config changes
 authors = [
     { name="ParisNeo", email="parisneo_ai@gmail.com" },
 ]
@@ -36,7 +36,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "aiofiles>=23.1.0",
     "pyyaml>=6.0", # Required for YAML handler (and personality loading)
-    "configguard>=0.4.0", # <<< ADDED ConfigGuard
+    "configguard>=0.6.0", # <<< ADDED ConfigGuard
     "pipmaster", # Still used by dependency_manager
     "requests>=2.28.0", # Needed by some bindings (ollama, llamacpp)
     "httpx>=0.23.0", # Needed by API tests and potentially async bindings

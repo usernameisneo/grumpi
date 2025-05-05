@@ -316,7 +316,7 @@ async def process_generation_request(
         # Let's simplify: load_model *must* be called with a specific name.
         # _determine_binding_and_model provides the target model name.
         # If model_name is None after that, the binding must handle it (use internal default).
-        effective_model_name_for_load = model_name or binding.model_name or "binding_default" # Best guess for context manager name
+        effective_model_name_for_load = model_name or binding.model_name or binding.default_model_name# Best guess for context manager name
         logger.debug(f"Request {request_id}: Entering manage_model_loading for Binding='{binding.binding_instance_name}', effective_model_name='{effective_model_name_for_load}'")
         # The context manager now uses binding.load_model which handles resource management internally
         async with manage_model_loading(binding, effective_model_name_for_load):

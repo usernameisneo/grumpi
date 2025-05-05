@@ -50,14 +50,18 @@ except ImportError:
 try:
     # Use pipmaster to ensure runtime dependencies for the wizard itself
     pm = pipmaster.PackageManager()
-    pm.install_if_missing("ascii_colors>=0.10.0")
-    pm.install_if_missing("configguard>=0.4.2")
-    pm.install_if_missing("pyyaml>=6.0")  # Needed for binding cards
-    pm.install_if_missing("toml>=0.10.0")  # Optional handler, good to have
-    pm.install_if_missing("cryptography>=3.4")  # For encryption key gen
+    pm.ensure_packages({
+                        "ascii_colors":">=0.11.0",
+                        "configguard":">=0.6.0",
+                        "pyyaml":">=6.0",
+                        "toml":">=0.10.0",
+                        "cryptography":">=3.4",
+                        })
     # Optional API clients needed for model listing - install if missing
-    pm.install_if_missing("ollama")
-    pm.install_if_missing("openai")
+    pm.ensure_packages([
+                        "ollama",
+                        "openai"
+                    ])
 except Exception as e:
     print(f"FATAL ERROR during dependency check/install: {e}")
     # Print traceback manually if ascii_colors isn't loaded yet
@@ -194,15 +198,7 @@ MAIN_SCHEMA: typing.Dict[str, typing.Any] = {
             "tts_binding": {"type": "str", "nullable": True, "default": None, "help": "Default Text-to-Speech binding instance name."},
             "stt_binding": {"type": "str", "nullable": True, "default": None, "help": "Default Speech-to-Text binding instance name."},
             "ttv_binding": {"type": "str", "nullable": True, "default": None, "help": "Default Text-to-Video binding instance name."},
-            "ttm_binding": {"type": "str", "nullable": True, "default": None, "help": "Default Text-to-Music binding instance name."},
-            "ttt_model": {"type": "str", "nullable": True, "default": None, "help": "Default model for the TTT binding."},
-            "tti_model": {"type": "str", "nullable": True, "default": None, "help": "Default model for the TTI binding."},
-            "tts_model": {"type": "str", "nullable": True, "default": None, "help": "Default model for the TTS binding."},
-            "stt_model": {"type": "str", "nullable": True, "default": None, "help": "Default model for the STT binding."},
-            "ttv_model": {"type": "str", "nullable": True, "default": None, "help": "Default model for the TTV binding."},
-            "ttm_model": {"type": "str", "nullable": True, "default": None, "help": "Default model for the TTM binding."},
-            "default_context_size": {"type": "int", "default": 4096, "min_val": 64, "help": "Default context window size."},
-            "default_max_output_tokens": {"type": "int", "default": 1024, "min_val": 1, "help": "Default max generation tokens."}
+            "ttm_binding": {"type": "str", "nullable": True, "default": None, "help": "Default Text-to-Music binding instance name."}
         }
     },
     "bindings_map": {
@@ -256,9 +252,9 @@ MAIN_SCHEMA: typing.Dict[str, typing.Any] = {
 PRESETS = {
     "Ollama CPU (Default Text)": {
         "defaults": {
-            "ttt_binding": "my_ollama_cpu", "ttt_model": "llama3:latest",
-            "tti_binding": None, "tti_model": None, "tts_binding": None, "tts_model": None,
-            "stt_binding": None, "stt_model": None, "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_ollama_cpu",
+            "tti_binding": None, "tts_binding": None,
+            "stt_binding": None, "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_ollama_cpu": "ollama_binding", },
         "resource_manager": { "gpu_strategy": "none", },
@@ -266,9 +262,9 @@ PRESETS = {
     },
     "Ollama GPU (Default Text)": { # Added GPU variant
         "defaults": {
-            "ttt_binding": "my_ollama_gpu", "ttt_model": "mixtral:latest", # Suggest Mixtral for GPU
-            "tti_binding": None, "tti_model": None, "tts_binding": None, "tts_model": None,
-            "stt_binding": None, "stt_model": None, "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_ollama_gpu", # Suggest Mixtral for GPU
+            "tti_binding": None, "tts_binding": None,
+            "stt_binding": None,  "ttv_binding": None,  "ttm_binding": None,
         },
         "bindings_map": { "my_ollama_gpu": "ollama_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # Assume GPU use
@@ -276,10 +272,10 @@ PRESETS = {
     },
     "Ollama GPU + Diffusers GPU": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_ollama_gpu", "ttt_model": "mixtral:latest",
-            "tti_binding": "my_diffusers_gpu", "tti_model": None, # User selects Diffusers model later
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_ollama_gpu",
+            "tti_binding": "my_diffusers_gpu",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_ollama_gpu": "ollama_binding", "my_diffusers_gpu": "diffusers_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, },
@@ -290,10 +286,10 @@ PRESETS = {
     },
     "Ollama GPU + DALL-E 3": { # NEW COMBINATION
         "defaults": {
-            "ttt_binding": "my_ollama_gpu", "ttt_model": "mixtral:latest",
-            "tti_binding": "my_dalle3_api", "tti_model": "dall-e-3",
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_ollama_gpu",
+            "tti_binding": "my_dalle3_api",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_ollama_gpu": "ollama_binding", "my_dalle3_api": "dalle_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # Ollama uses GPU
@@ -304,10 +300,10 @@ PRESETS = {
     },
     "OpenAI API (Text & Image)": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_openai_api", "ttt_model": "gpt-4o",
-            "tti_binding": "my_dalle3_api", "tti_model": "dall-e-3",
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_openai_api",
+            "tti_binding": "my_dalle3_api",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_openai_api": "openai_binding", "my_dalle3_api": "dalle_binding", },
         "resource_manager": { "gpu_strategy": "none", },
@@ -318,10 +314,10 @@ PRESETS = {
     },
     "OpenAI API + Diffusers GPU": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_openai_api", "ttt_model": "gpt-4o",
-            "tti_binding": "my_diffusers_gpu", "tti_model": None,
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_openai_api",
+            "tti_binding": "my_diffusers_gpu",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_openai_api": "openai_binding", "my_diffusers_gpu": "diffusers_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # Diffusers uses GPU
@@ -332,9 +328,9 @@ PRESETS = {
     },
     "LlamaCpp CPU (Local Text)": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_llamacpp_cpu", "ttt_model": None, # User selects model later
-            "tti_binding": None, "tti_model": None, "tts_binding": None, "tts_model": None,
-            "stt_binding": None, "stt_model": None, "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_llamacpp_cpu",
+            "tti_binding": None, "tts_binding": None,
+            "stt_binding": None, "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_llamacpp_cpu": "llamacpp_binding", },
         "resource_manager": { "gpu_strategy": "none", },
@@ -342,9 +338,9 @@ PRESETS = {
     },
     "LlamaCpp GPU (Local Text)": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_llamacpp_gpu", "ttt_model": None, # User selects model later
-            "tti_binding": None, "tti_model": None, "tts_binding": None, "tts_model": None,
-            "stt_binding": None, "stt_model": None, "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_llamacpp_gpu",
+            "tti_binding": None, "tts_binding": None,
+            "stt_binding": None, "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_llamacpp_gpu": "llamacpp_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, },
@@ -352,10 +348,10 @@ PRESETS = {
     },
     "LlamaCpp GPU + Diffusers GPU": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_llamacpp_gpu", "ttt_model": None, # User selects GGUF model later
-            "tti_binding": "my_diffusers_gpu", "tti_model": None, # User selects Diffusers model later
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_llamacpp_gpu",
+            "tti_binding": "my_diffusers_gpu",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_llamacpp_gpu": "llamacpp_binding", "my_diffusers_gpu": "diffusers_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, },
@@ -366,10 +362,10 @@ PRESETS = {
     },
     "LlamaCpp GPU + DALL-E 3": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_llamacpp_gpu", "ttt_model": None,
-            "tti_binding": "my_dalle3_api", "tti_model": "dall-e-3",
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_llamacpp_gpu",
+            "tti_binding": "my_dalle3_api",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_llamacpp_gpu": "llamacpp_binding", "my_dalle3_api": "dalle_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # LlamaCpp uses GPU
@@ -378,11 +374,42 @@ PRESETS = {
             "my_dalle3_api": {"type": "dalle_binding", "api_key": None, "model": "dall-e-3"} # Prompt for key
         }
     },
+    "Gemini API (Text/Vision) + Imagen 3 API (Image Gen)": {
+        "defaults": {
+            "ttt_binding": "my_gemini_text_api", # Instance for text/vision
+            "tti_binding": "my_imagen3_api",     # Instance for image generation
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
+        },
+        "bindings_map": {
+            "my_gemini_text_api": "gemini_binding",         # Map text instance to standard Gemini binding
+            "my_imagen3_api": "gemini_image_binding",     # Map image instance to the new image binding
+        },
+        "resource_manager": { "gpu_strategy": "none", }, # Both are APIs, no local GPU needed
+        "suggested_instance_configs": {
+            "my_gemini_text_api": { # Config for the text/vision instance
+                "type": "gemini_binding",
+                "google_api_key": None, # Prompt user for key
+                "auto_detect_limits": True,
+                # Add default safety settings if desired, or let user configure later
+                # "safety_setting_harassment": "BLOCK_MEDIUM_AND_ABOVE",
+                # ... other safety settings ...
+            },
+            "my_imagen3_api": { # Config for the image generation instance
+                "type": "gemini_image_binding",
+                "google_api_key": None, # Prompt user for the same key (usually)
+                "default_model": "imagen-3.0-generate-002", # Use Imagen 3 by default
+                "default_aspect_ratio": "1:1",
+                "default_number_of_images": 1,
+                # Safety settings for gemini flash model (if user switches) are defined in card defaults
+            }
+        }
+    },    
     "Hugging Face CPU (Local Text)": { # NEW HF PRESET
         "defaults": {
-            "ttt_binding": "my_hf_cpu", "ttt_model": None, # User selects model later
-            "tti_binding": None, "tti_model": None, "tts_binding": None, "tts_model": None,
-            "stt_binding": None, "stt_model": None, "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_hf_cpu",
+            "tti_binding": None, "tts_binding": None,
+            "stt_binding": None, "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_hf_cpu": "hf_binding", },
         "resource_manager": { "gpu_strategy": "none", },
@@ -395,9 +422,9 @@ PRESETS = {
     },
     "Hugging Face GPU (Local Text)": { # NEW HF PRESET
         "defaults": {
-            "ttt_binding": "my_hf_gpu", "ttt_model": None, # User selects model later
-            "tti_binding": None, "tti_model": None, "tts_binding": None, "tts_model": None,
-            "stt_binding": None, "stt_model": None, "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_hf_gpu",
+            "tti_binding": None, "tts_binding": None,
+            "stt_binding": None, "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_hf_gpu": "hf_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, },
@@ -411,10 +438,10 @@ PRESETS = {
     },
     "Hugging Face GPU + Diffusers GPU": { # NEW COMBINATION
         "defaults": {
-            "ttt_binding": "my_hf_gpu", "ttt_model": None,
-            "tti_binding": "my_diffusers_gpu", "tti_model": None,
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_hf_gpu",
+            "tti_binding": "my_diffusers_gpu",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_hf_gpu": "hf_binding", "my_diffusers_gpu": "diffusers_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # Both use GPU potentially
@@ -425,10 +452,10 @@ PRESETS = {
     },
      "Hugging Face GPU + DALL-E 3": { # NEW COMBINATION
         "defaults": {
-            "ttt_binding": "my_hf_gpu", "ttt_model": None,
-            "tti_binding": "my_dalle3_api", "tti_model": "dall-e-3",
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_hf_gpu",
+            "tti_binding": "my_dalle3_api",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_hf_gpu": "hf_binding", "my_dalle3_api": "dalle_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # HF uses GPU
@@ -439,9 +466,9 @@ PRESETS = {
     },
     "Gemini API (Text & Vision)": { # Existing Preset
         "defaults": {
-            "ttt_binding": "my_gemini_api", "ttt_model": "gemini-1.5-pro-latest", # Example vision model
-            "tti_binding": None, "tti_model": None, "tts_binding": None, "tts_model": None,
-            "stt_binding": None, "stt_model": None, "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_gemini_api",
+            "tti_binding": None, "tts_binding": None,
+            "stt_binding": None, "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_gemini_api": "gemini_binding", },
         "resource_manager": { "gpu_strategy": "none", },
@@ -449,10 +476,10 @@ PRESETS = {
     },
     "Gemini API + Diffusers GPU": { # NEW COMBINATION
         "defaults": {
-            "ttt_binding": "my_gemini_api", "ttt_model": "gemini-1.5-pro-latest",
-            "tti_binding": "my_diffusers_gpu", "tti_model": None,
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_gemini_api",
+            "tti_binding": "my_diffusers_gpu",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_gemini_api": "gemini_binding", "my_diffusers_gpu": "diffusers_binding", },
         "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # Diffusers uses GPU
@@ -463,10 +490,10 @@ PRESETS = {
     },
     "Gemini API + DALL-E 3": { # NEW COMBINATION
         "defaults": {
-            "ttt_binding": "my_gemini_api", "ttt_model": "gemini-1.5-pro-latest",
-            "tti_binding": "my_dalle3_api", "tti_model": "dall-e-3",
-            "tts_binding": None, "tts_model": None, "stt_binding": None, "stt_model": None,
-            "ttv_binding": None, "ttv_model": None, "ttm_binding": None, "ttm_model": None,
+            "ttt_binding": "my_gemini_api",
+            "tti_binding": "my_dalle3_api",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
         },
         "bindings_map": { "my_gemini_api": "gemini_binding", "my_dalle3_api": "dalle_binding", },
         "resource_manager": { "gpu_strategy": "none", }, # Neither uses local GPU
@@ -476,6 +503,7 @@ PRESETS = {
         }
     },
 }
+
 # --- END PRESETS ---
 
 # --- Diffusers Model Suggestions ---
@@ -746,7 +774,7 @@ class ConfigurationWizard:
             if bindings_map_section:
                 # Use get() on ConfigSection if available, otherwise iterate
                 try:
-                    binding_type = bindings_map_section.get(binding_instance_name) # Use get() if ConfigGuard >= 0.4
+                    binding_type = bindings_map_section.get(binding_instance_name) # Use get() if ConfigGuard >= 0.6.0
                 except AttributeError: # Fallback for older ConfigGuard or if get fails
                     binding_type = getattr(bindings_map_section, binding_instance_name, None)
             if not binding_type:

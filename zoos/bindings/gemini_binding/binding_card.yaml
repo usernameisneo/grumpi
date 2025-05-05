@@ -32,6 +32,11 @@ instance_schema:
     type: str
     default: "gemini1"
     help: "Internal name assigned to this binding instance."
+  default_model:
+    type: str
+    nullable: true
+    default: "gemma-3-27b-it"
+    help: "The default model for the binding."
 
   # --- Gemini Binding Specific Settings ---
   google_api_key:

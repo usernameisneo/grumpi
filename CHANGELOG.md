@@ -1,3 +1,13 @@
+## [0.3.2] - 2025-05-03
+
+### Added
+
+*   **New API Endpoints:**
+    *   Added `GET /api/v1/list_active_bindings` endpoint to list only the binding instances that were successfully loaded and are currently active. (Tag: `Listing`, `Bindings`)
+    *   Added `GET /api/v1/get_default_bindings` endpoint to retrieve the currently configured default binding instance names for each modality (TTT, TTI, TTS, etc.) from the server's main configuration. (Tag: `Defaults`, `Bindings`)
+    *   Added `GET /api/v1/get_default_ttt_context_length` endpoint to retrieve the context length (window size) of the model currently active on the default Text-to-Text (TTT) binding instance. Returns the context length if available, along with the binding and model names. (Tag: `Defaults`, `Bindings`, `Context Info`)
+*   Updated API models (`api/models.py`) with new response types: `ListActiveBindingsResponse`, `GetDefaultBindingsResponse`, `GetContextLengthResponse`.
+
 ## [0.3.1] - 2025-05-01
 
 ### Changed
@@ -71,7 +81,6 @@
 *   **API (`/generate`):** Input format changed to `input_data: List[InputData]` to support multimodal inputs, replacing the deprecated `text_prompt` field. Standardized response formats.
 *   **Logging:** Enhanced using the `ascii_colors` library.
 *   **Installation:** Improved user experience with interactive scripts (`install_core.py`, `configuration_wizard.py`).
-
 
 
 ## [0.1.1] - 2025-04-17

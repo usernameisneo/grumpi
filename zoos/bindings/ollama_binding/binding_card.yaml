@@ -33,6 +33,11 @@ instance_schema:
     type: str
     default: "ollama1"
     help: "Internal name assigned to this binding instance."
+  default_model:
+    type: str
+    nullable: true
+    default: null
+    help: "The default model for the binding."
 
   # --- Ollama Binding Specific Settings ---
   host:

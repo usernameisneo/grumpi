@@ -15,7 +15,7 @@ import traceback
 
 try:
     import pipmaster as pm
-    pm.ensure_packages({"PyQt5": "", "qt_material": ""})
+    pm.ensure_packages(["PyQt5", "markdown", "qt_material", "qtawesome"])
 except ImportError:
     print("Error: pipmaster not found. Please install it: pip install pipmaster")
     print("Then install required packages: pip install PyQt5 qt_material")
@@ -35,7 +35,11 @@ try:
     )
     from PyQt5.QtCore import Qt, QSettings, QSize, QCoreApplication
     from PyQt5.QtGui import QFont, QIcon, QDesktopServices, QTextCursor
+    # --- Import qt_material AFTER PyQt ---
     import qt_material
+
+    # --- Import qtawesome ---
+    import qtawesome as qta
 
 except ImportError as e:
     print(f"Error: Missing required PyQt5 components or qt_material. ({e})")

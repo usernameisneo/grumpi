@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional, Union, AsyncGenerator, Tuple, List
 
 # Use pipmaster if needed, or rely on main installation
 import pipmaster as pm
-pm.ensure_packages(["openai","pillow"])
+pm.ensure_packages(["openai","pillow","tiktoken"])
 
 from openai import AsyncOpenAI, OpenAIError, APIConnectionError, RateLimitError, NotFoundError
 # Import specific types for clarity and type checking
@@ -22,6 +22,7 @@ from openai.types.model import Model as OpenaiModelType
 from openai.types.chat import ChatCompletionChunk # For stream types
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam # For message structure
 from PIL import Image # Optional: for potentially validating base64 data
+import tiktoken
 openai_installed = True
 
 import ascii_colors as logging # Use logging alias
@@ -584,17 +585,59 @@ class OpenAIBinding(Binding):
              yield {"type": "error", "content": f"Unexpected OpenAI stream error: {e}"}
 
 
-    async def tokenize(self, text: str, add_bos: bool = True, add_eos: bool = False) -> List[int]:
-        """Tokenization is not directly supported via standard OpenAI API."""
-        if not self._model_loaded: raise RuntimeError(f"Model not loaded in instance '{self.binding_instance_name}' for tokenization")
-        logger.warning(f"OpenAI binding '{self.binding_instance_name}': Tokenization not supported via standard API.")
-        raise NotImplementedError(f"Binding '{self.binding_instance_name}' (OpenAI) does not support tokenization.")
+    async def tokenize(self, text: str, add_bos: bool = False, add_eos: bool = False, model_name="gpt-4o-mini") -> List[int]:
+        """
+        Tokenize text using tiktoken as an approximation for Llama models.
+        Args:
+            text: Input text to tokenize.
+            add_bos: Ignored (tiktoken doesn't support BOS token explicitly).
+            add_eos: Ignored (tiktoken doesn't support EOS token explicitly).
+        Returns:
+            List of token IDs.
+        Raises:
+            RuntimeError: If model is not loaded.
+        """
+        try:
+            logger.info(f"Ollama binding '{self.binding_instance_name}': Estimating tokens with tiktoken.")
+            try:
+                encoding = tiktoken.encoding_for_model(model_name)
+                tokens = encoding.encode(text)
+                return tokens
+            except:
+                encoding = tiktoken.get_encoding("cl100k_base")
+                tokens = encoding.encode(text)
+                return tokens
 
-    async def detokenize(self, tokens: List[int]) -> str:
-        """Detokenization is not supported via standard OpenAI API."""
-        if not self._model_loaded: raise RuntimeError(f"Model not loaded in instance '{self.binding_instance_name}' for detokenization")
-        logger.warning(f"OpenAI binding '{self.binding_instance_name}': Detokenization not supported via standard API.")
-        raise NotImplementedError(f"Binding '{self.binding_instance_name}' (OpenAI) does not support detokenization.")
+        except Exception as e:
+            logger.warning(f"Ollama binding '{self.binding_instance_name}': Tiktoken failed ({e}). Falling back to character-based estimate.")
+            # Fallback: Estimate ~1 token per 4 characters, return pseudo-token IDs
+            return text.split(" ")  # Dummy token IDs
+
+    async def detokenize(self, tokens: List[int], model_name="gpt-4o-mini") -> str:
+        """
+        Detokenize a list of token IDs using tiktoken as an approximation.
+        Args:
+            tokens: List of token IDs.
+        Returns:
+            Detokenized text string.
+        Raises:
+            RuntimeError: If model is not loaded.
+        """
+        try:
+            logger.info(f"Opan AI binding '{self.binding_instance_name}': Detokenizing with tiktoken.")
+            try:
+                encoding = tiktoken.encoding_for_model(model_name)
+                text = encoding.decode(tokens)
+                return text
+            except:
+                logger.info(f"Opan AI binding '{self.binding_instance_name}': Detokenizing with tiktoken.")
+                encoding = tiktoken.get_encoding("cl100k_base")
+                text = encoding.decode(tokens)
+                return text
+
+        except Exception as e:
+            logger.warning(f"Opan AI binding '{self.binding_instance_name}': Detokenization failed ({e}). Returning empty string.")
+            return " ".join(tokens)  # Fallback: Return empty string if detokenization fails
 
     async def get_current_model_info(self) -> Dict[str, Any]:
         """Returns information about the currently active OpenAI model."""

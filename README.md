@@ -175,10 +175,17 @@ All `/api/v1/*` endpoints (except `/health`) require authentication. Include a v
 #### Listing
 
 *   **`GET /api/v1/list_bindings`**: Lists discovered binding types (from cards) and configured instances (from instance files).
+*   **`GET /api/v1/list_active_bindings`**: Lists only the binding instances that were successfully configured and loaded by the server. *(New)*
 *   **`GET /api/v1/list_personalities`**: Lists loaded and enabled personalities.
 *   **`GET /api/v1/list_functions`**: Lists discovered custom functions.
 *   **`GET /api/v1/list_available_models/{binding_instance_name}`**: Asks a specific binding instance (e.g., `default_ollama`) to list models it can access. Returns detailed `ModelInfo` including capabilities.
 *   **`GET /api/v1/list_models`**: Lists models found in the configured `models_folder` subdirectories (basic file scan).
+
+#### Defaults and Info
+
+*   **`GET /api/v1/get_default_bindings`**: Retrieves the currently configured default binding instance names for each modality (TTT, TTI, etc.). *(New)*
+*   **`GET /api/v1/get_default_ttt_context_length`**: Retrieves the context length of the model currently active on the default Text-to-Text (TTT) binding instance. *(New)*
+*   **`GET /api/v1/get_model_info/{binding_name}`**: Retrieves info about the *currently loaded* model for a specific binding.
 
 #### Generation
 
