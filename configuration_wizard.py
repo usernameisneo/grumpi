@@ -1816,14 +1816,12 @@ class ConfigurationWizard:
         ASCIIColors.print("Select the default binding *instance* and model for each generation type.")
 
         defaults_section = getattr(self.config, "defaults", None)
-        bindings_map_section = getattr(self.config, "bindings_map", None)
-        if not defaults_section or not bindings_map_section:
+        instance_infos = self._get_binding_instances_info(self.config)
+        ASCIIColors.info(instance_infos)
+
+        if defaults_section is None or instance_infos is None:
             ASCIIColors.error("Defaults or Bindings Map section missing or invalid in main config!"); return
 
-        try:
-            available_instance_map = bindings_map_section.get_dict() or {}
-        except Exception as e:
-            logger.error(f"Could not get bindings_map dictionary: {e}"); available_instance_map = {}
 
         modified = False
         default_schema = MAIN_SCHEMA.get("defaults", {}).get("schema", {})
@@ -1844,10 +1842,12 @@ class ConfigurationWizard:
 
                 # Filter instances
                 compatible_instances = []
-                for instance_name, binding_type in available_instance_map.items():
-                     supported_mods = BINDING_MODALITY_MAP.get(binding_type, [])
-                     modality_check = 'tti_vision' if mod_type == 'tti' and 'tti_vision' in supported_mods else mod_type
-                     if modality_check in supported_mods: compatible_instances.append(instance_name)
+                sorted_instances = sorted(instance_infos, key=lambda x: x[0])
+                for name, path, info in sorted_instances:
+                    file_type = info.get('type_from_file')
+                    supported_mods = info.get("type","ttt")
+                    modality_check = 'tti_vision' if mod_type == 'tti' and 'tti_vision' in supported_mods else mod_type
+                    if modality_check in supported_mods: compatible_instances.append(name)
 
                 # Prepare menu options
                 binding_options: List[Tuple[str, Optional[str]]] = [(name, name) for name in sorted(compatible_instances)]
