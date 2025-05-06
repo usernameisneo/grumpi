@@ -8,7 +8,7 @@
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
 pydantic>=2.0.0
-# toml>=0.10.0 # Handled by configguard[toml] extra if needed
+toml>=0.10.0 # Handled by configguard[toml] extra if needed
 python-dotenv>=1.0.0
 aiofiles>=23.1.0
 pyyaml>=6.0

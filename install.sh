@@ -22,6 +22,19 @@ then
 fi
 echo "Found pip for Python 3."
 
+echo "Installing venv..."
+python -m pip install venv
+
+echo "Creating venv..."
+python -m venv venv
+
+echo "Activating venv..."
+./venv/Scripts/activate
+
+echo "Installing requirements..."
+pip install -r requirements.txt
+
+
 # Run the core Python installation script
 echo "Running core installation script (install_core.py)..."
 python3 install_core.py

@@ -21,6 +21,18 @@ if %errorlevel% NEQ 0 (
 )
 echo Found pip.
 
+echo Installing venv...
+python -m pip install venv
+
+echo Creating venv...
+python -m venv venv
+
+echo Activating venv...
+./venv/Scripts/activate
+
+echo Installing requirements...
+pip install -r requirements.txt
+
 echo Running core installation script (install_core.py)...
 python install_core.py
 if %errorlevel% NEQ 0 (
