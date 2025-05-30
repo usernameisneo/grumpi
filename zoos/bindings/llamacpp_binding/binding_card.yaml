@@ -1,0 +1,180 @@
+# encoding:utf-8
+# Project: lollms_server
+# File: zoos/bindings/llamacpp_server_binding/binding_card.yaml
+# Author: ParisNeo with Gemini & Claude
+# Date: 2024-05-06
+# Description: Metadata and configuration schema for the Llama.cpp Server Binding.
+
+# --- Binding Metadata ---
+type_name: "llamacpp_server_binding"
+display_name: "Llama.cpp Server"
+version: "1.0.0" # Version of this binding code
+author: "ParisNeo"
+description: |
+  Binding for the llama.cpp server (server.exe or server binary). 
+  Manages one or more llama.cpp server subprocesses to serve GGUF models.
+  Supports text generation, vision models (LLaVA with .mmproj), tokenization, and embeddings (if enabled on server).
+  Shares server instances between bindings using the same model and critical configurations.
+requirements: # List Python packages needed by this binding
+  - llama-cpp-binaries # Or llama-cpp-python[server]
+  - requests>=2.20.0
+  - pillow>=9.0.0 # For preparing image data for vision models
+  - aiohttp>=3.8.0 # For asynchronous HTTP requests to the server
+
+supports_streaming: true
+documentation_url: "https://github.com/ggerganov/llama.cpp/tree/master/examples/server" # Link to llama.cpp server docs
+supported_output_modalities : ["text"] # Server primarily outputs text
+supported_input_modalities : ["text", "image"] # Can take text and images (for LLaVA)
+
+# --- Instance Configuration Schema (for ConfigGuard) ---
+# Defines the settings users can put in their instance config files (e.g., my_llamacpp_server.yaml)
+instance_schema:
+  __version__: "0.1.0" # Schema version for instance config
+  type:
+    type: str
+    default: "llamacpp_server_binding"
+    help: "Binding type identifier (should be 'llamacpp_server_binding')."
+  binding_instance_name:
+    type: str
+    default: "llamacpp_server1"
+    help: "Internal name assigned to this binding instance."
+  default_model:
+    type: str
+    nullable: true
+    default: null
+    help: "The default GGUF model name (e.g., 'my_model.Q4_K_M.gguf') for this binding instance. Relative to 'models_path' or absolute."
+
+  # --- Llama.cpp Server Binding Specific Settings ---
+  models_path:
+    type: str
+    nullable: true
+    default: null # If null, defaults to LOLLMS_PERSONAL_MODELS_PATH / llamacpp_server_binding
+    help: "Path to the directory where GGUF models for this binding are stored. If null, uses a default subfolder in your personal models path."
+  
+  clip_model_name:
+    type: str
+    nullable: true
+    default: null
+    help: "Name or path of the LLaVA multimodal projector (.mmproj) file. If provided, will be used. If null, auto-detection based on main model name will be attempted."
+
+  llama_server_binary_path:
+    type: str
+    nullable: true
+    default: null # If null, uses binary from llama-cpp-binaries
+    help: "Optional full path to a custom llama.cpp server executable. If null, the one from 'llama-cpp-binaries' is used."
+
+  default_completion_format:
+    type: str
+    default: "chat" # "chat" or "completion"
+    choices: ["chat", "completion"]
+    help: "Default endpoint format to use: 'chat' for /v1/chat/completions (OpenAI-like) or 'completion' for legacy /completion."
+
+  # --- Server Process Arguments (merged into server_args) ---
+  host:
+    type: str
+    default: "127.0.0.1"
+    help: "Host address for the llama.cpp server subprocesses to bind to."
+  base_port_search:
+    type: int
+    default: 9600
+    min: 1024
+    max: 65500
+    help: "Base port number to start searching for an available port for new server instances."
+  max_port_search_attempts:
+    type: int
+    default: 100
+    min: 1
+    max: 1000
+    help: "Maximum attempts to find a free port starting from base_port_search."
+  server_startup_timeout:
+    type: int
+    default: 120 # seconds
+    min: 10
+    max: 600
+    help: "Maximum time (seconds) to wait for a llama.cpp server process to become healthy after starting."
+  parallel_slots:
+    type: int
+    default: 4
+    min: 1
+    max: 128 # Practical limit
+    help: "Number of parallel processing slots the llama.cpp server should be configured with (--parallel)."
+
+  # --- Model Loading Arguments (merged into server_args) ---
+  n_gpu_layers:
+    type: int
+    default: 0 # 0 for CPU, -1 for all layers to GPU (if supported by build)
+    min: -1 
+    help: "Number of model layers to offload to GPU. -1 for all, 0 for CPU only."
+  n_ctx: # Context size
+    type: int
+    default: 4096
+    min: 512
+    help: "Context size (tokens) for the model."
+  n_batch:
+    type: int
+    default: 512
+    min: 1
+    help: "Batch size for prompt processing."
+  embedding:
+    type: bool
+    default: false
+    help: "Enable embedding generation endpoint on the server."
+  # Add other common llama.cpp server arguments here if desired for easy config
+  # e.g., main_gpu, tensor_split, rope_scaling_type, etc.
+  # Users can also pass these via server_args.extra_cli_flags or directly in server_args for less common ones.
+
+  # --- Default Generation Parameters (merged into server_args, can be overridden per request) ---
+  temperature:
+    type: float
+    default: 0.7
+    min: 0.0
+    max: 2.0
+    help: "Default temperature for generation."
+  top_k:
+    type: int
+    default: 40
+    min: 0 # 0 disables top_k
+    help: "Default top_k for generation."
+  top_p:
+    type: float
+    default: 0.9
+    min: 0.0
+    max: 1.0
+    help: "Default top_p (nucleus sampling) for generation."
+  repeat_penalty:
+    type: float
+    default: 1.1
+    min: 0.0
+    help: "Default repeat penalty."
+  repeat_last_n:
+    type: int
+    default: 64
+    min: 0
+    help: "Default number of last tokens to consider for repeat penalty."
+  seed:
+    type: int
+    default: -1 # -1 for random seed
+    help: "Default seed for generation. -1 for random."
+
+  grammar:
+    type: str
+    nullable: true
+    default: null
+    help: "Optional GBNF grammar string to constrain model output. If set, applies to all generations unless overridden."
+
+  # --- Advanced Server Arguments ---
+  server_args: # For less common or expert settings
+    type: dict
+    default: {} # Populated by defaults in code, then by above settings, then by this dict
+    help: |
+      A dictionary for additional llama.cpp server arguments.
+      Keys should match the binding's internal mapping or 'extra_cli_flags'.
+      Example: {"use_mmap": true, "verbose": false, "extra_cli_flags": "--my-custom-flag value"}
+      Overrides corresponding top-level settings if a key is duplicated.
+      Includes:
+      - n_gpu_layers, n_ctx, n_batch, embedding, verbose, server_startup_timeout, parallel_slots,
+      - temperature, top_k, top_p, repeat_penalty, repeat_last_n, seed (from top-level for convenience)
+      - main_gpu, tensor_split, use_mmap, use_mlock, n_threads, n_threads_batch,
+      - rope_scaling_type, rope_freq_base, rope_freq_scale, chat_template,
+      - mirostat_mode, mirostat_tau, mirostat_eta
+      - extra_cli_flags (list of strings or space-separated string for raw CLI flags)

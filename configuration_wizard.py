@@ -326,6 +326,20 @@ PRESETS = {
             "my_diffusers_gpu": { "type": "diffusers_binding", "models_folder": "models/diffusers_models", "device": "cuda", "use_fp16": True }
         }
     },
+    "OpenAI API + DALL-E 3": { # Existing Preset
+        "defaults": {
+            "ttt_binding": "my_openai_api",
+            "tti_binding": "my_dalle3_api",
+            "tts_binding": None, "stt_binding": None,
+            "ttv_binding": None, "ttm_binding": None,
+        },
+        "bindings_map": { "my_openai_api": "openai_binding", "my_dalle3_api": "dalle_binding", },
+        "resource_manager": { "gpu_strategy": "semaphore", "gpu_limit": 1, }, # Dalle uses GPU
+        "suggested_instance_configs": {
+            "my_openai_api": {"type": "openai_binding", "api_key": None}, # Prompt for key
+            "my_dalle3_api": { "type": "dalle_binding", "api_key": "" }
+        }
+    },
     "LlamaCpp CPU (Local Text)": { # Existing Preset
         "defaults": {
             "ttt_binding": "my_llamacpp_cpu",
@@ -528,6 +542,7 @@ DALLE_MODEL_SUGGESTIONS = ["dall-e-3", "dall-e-2"]
 # Used to filter binding instances when selecting defaults
 BINDING_MODALITY_MAP = {
     "ollama_binding": ["ttt", "tti_vision"], # Ollama can serve vision models
+    "llamacpp_binding": ["ttt", "tti_vision"], # Lllamacpp can serve vision models
     "openai_binding": ["ttt", "tti_vision"], # OpenAI models like GPT-4o handle vision
     "llamacpp_binding": ["ttt", "tti_vision"], # Llama.cpp supports LLaVA models
     "hf_binding": ["ttt", "tti_vision"], # HF can load vision models
