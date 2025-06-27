@@ -101,6 +101,11 @@ onMounted(() => {
       <FunctionsView v-else-if="currentView === 'functions'" />
       <ConfigView v-else-if="currentView === 'config'" />
     </main>
+
+    <!-- Global temporary message display -->
+    <div v-if="store.temporaryMessage" :class="['global-message', `message-${store.temporaryMessage.type}`]">
+      {{ store.temporaryMessage.text }}
+    </div>
   </div>
 </template>
 
@@ -227,5 +232,45 @@ body {
 .main {
   background: #1a237e;
   min-height: calc(100vh - 48px);
+}
+
+.global-message {
+  position: fixed;
+  top: 60px;
+  right: 20px;
+  padding: 12px 20px;
+  font-weight: bold;
+  z-index: 1000;
+  max-width: 400px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.message-success {
+  background: rgba(76, 175, 80, 0.9);
+  border: 1px solid #4caf50;
+  color: white;
+}
+
+.message-error {
+  background: rgba(244, 67, 54, 0.9);
+  border: 1px solid #f44336;
+  color: white;
+}
+
+.message-info {
+  background: rgba(25, 118, 210, 0.9);
+  border: 1px solid #1976d2;
+  color: white;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 </style>

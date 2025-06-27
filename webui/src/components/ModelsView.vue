@@ -266,8 +266,48 @@ function copyModelPath() {
 }
 
 function testWithBinding() {
-  // This would integrate with the generate view
-  console.log('Test with binding functionality would be implemented here')
+  if (!selectedModel.value) return
+
+  const compatibleBindings = getCompatibleBindings(selectedModel.value.category)
+  if (compatibleBindings.length === 0) {
+    store.setTemporaryMessage('No compatible bindings found for this model type', 'error')
+    return
+  }
+
+  // Find an active binding that's compatible
+  const activeCompatibleBinding = store.activeBindings.find(binding =>
+    compatibleBindings.includes(binding.type)
+  )
+
+  if (!activeCompatibleBinding) {
+    store.setTemporaryMessage(`No active ${compatibleBindings[0]} binding found. Please configure a binding first.`, 'error')
+    return
+  }
+
+  // Create a test generation request
+  const testRequest = {
+    input_data: [{
+      type: 'text',
+      role: 'user_prompt',
+      data: `Test message using model: ${selectedModel.value.name}`,
+      mime_type: null,
+      metadata: {}
+    }],
+    binding_name: activeCompatibleBinding.binding_instance_name,
+    generation_type: 'ttt',
+    stream: false,
+    parameters: {
+      max_tokens: 50,
+      temperature: 0.7
+    }
+  }
+
+  // Execute test generation
+  store.generate(testRequest).then(() => {
+    store.setTemporaryMessage(`Successfully tested model ${selectedModel.value.name} with ${activeCompatibleBinding.binding_instance_name}`, 'success')
+  }).catch((error: any) => {
+    store.setTemporaryMessage(`Test failed: ${error.message}`, 'error')
+  })
 }
 </script>
 

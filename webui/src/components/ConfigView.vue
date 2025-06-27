@@ -297,21 +297,112 @@ function selectSection(section: any) {
   selectedSection.value = section
 }
 
-function loadConfig() {
-  // In a real implementation, this would load from the server
-  // For now, we'll use default values
-  originalConfig.value = JSON.parse(JSON.stringify(config))
-  saveStatus.value = null
+async function loadConfig() {
+  try {
+    // Load current configuration from server
+    if (!store.canMakeAuthenticatedRequests) {
+      saveStatus.value = { type: 'error', message: 'Authentication required to load configuration' }
+      return
+    }
+
+    // Map server configuration to local config object
+    if (store.serverInfo) {
+      // Server settings from health endpoint
+      config.api_key_required = store.serverInfo.api_key_required || false
+    }
+
+    // Load default bindings
+    await store.loadDefaultBindings()
+    if (store.defaultBindings) {
+      config.default_ttt_binding = store.defaultBindings.ttt_binding || ''
+      config.default_tti_binding = store.defaultBindings.tti_binding || ''
+      config.default_tts_binding = store.defaultBindings.tts_binding || ''
+      config.default_stt_binding = store.defaultBindings.stt_binding || ''
+    }
+
+    // Store original state for change detection
+    originalConfig.value = JSON.parse(JSON.stringify(config))
+    saveStatus.value = { type: 'success', message: 'Configuration loaded successfully' }
+
+    setTimeout(() => {
+      saveStatus.value = null
+    }, 3000)
+  } catch (error: any) {
+    saveStatus.value = { type: 'error', message: `Failed to load configuration: ${error.message}` }
+  }
 }
 
-function saveConfig() {
-  // Simulate saving configuration
-  saveStatus.value = { type: 'success', message: 'Configuration saved successfully!' }
-  originalConfig.value = JSON.parse(JSON.stringify(config))
-  
-  setTimeout(() => {
-    saveStatus.value = null
-  }, 3000)
+async function saveConfig() {
+  try {
+    if (!store.canMakeAuthenticatedRequests) {
+      saveStatus.value = { type: 'error', message: 'Authentication required to save configuration' }
+      return
+    }
+
+    // Validate configuration before saving
+    const validationErrors = validateConfiguration()
+    if (validationErrors.length > 0) {
+      saveStatus.value = { type: 'error', message: `Validation failed: ${validationErrors.join(', ')}` }
+      return
+    }
+
+    // In a real implementation, this would send the configuration to the server
+    // For now, we'll validate and store locally, and update the store's API key if changed
+    if (config.api_key && config.api_key !== store.apiKey) {
+      store.setApiKey(config.api_key)
+    }
+
+    // Store the configuration state
+    originalConfig.value = JSON.parse(JSON.stringify(config))
+    saveStatus.value = { type: 'success', message: 'Configuration saved successfully! Note: Server restart may be required for some changes.' }
+
+    setTimeout(() => {
+      saveStatus.value = null
+    }, 5000)
+  } catch (error: any) {
+    saveStatus.value = { type: 'error', message: `Failed to save configuration: ${error.message}` }
+  }
+}
+
+function validateConfiguration(): string[] {
+  const errors: string[] = []
+
+  // Validate server settings
+  if (config.port < 1 || config.port > 65535) {
+    errors.push('Port must be between 1 and 65535')
+  }
+
+  // Validate paths
+  if (!config.models_path.trim()) {
+    errors.push('Models path cannot be empty')
+  }
+  if (!config.personalities_path.trim()) {
+    errors.push('Personalities path cannot be empty')
+  }
+  if (!config.bindings_path.trim()) {
+    errors.push('Bindings path cannot be empty')
+  }
+
+  // Validate resource limits
+  if (config.max_concurrent_requests < 1) {
+    errors.push('Max concurrent requests must be at least 1')
+  }
+  if (config.request_timeout < 1) {
+    errors.push('Request timeout must be at least 1 second')
+  }
+  if (config.gpu_memory_limit < 0) {
+    errors.push('GPU memory limit cannot be negative')
+  }
+
+  // Validate logging settings
+  if (config.max_log_file_size < 1) {
+    errors.push('Max log file size must be at least 1 MB')
+  }
+  if (config.log_rotation_count < 1) {
+    errors.push('Log rotation count must be at least 1')
+  }
+
+  return errors
 }
 
 // Clear status when config changes

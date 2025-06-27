@@ -201,8 +201,10 @@ function selectPersonality(personality: any) {
 
 function copyPrompt(prompt: string) {
   navigator.clipboard.writeText(prompt).then(() => {
-    // Could add a toast notification here
-    console.log('Prompt copied to clipboard')
+    // Show temporary visual feedback
+    store.setTemporaryMessage('Prompt copied to clipboard', 'success')
+  }).catch(() => {
+    store.setTemporaryMessage('Failed to copy prompt to clipboard', 'error')
   })
 }
 </script>

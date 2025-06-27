@@ -39,6 +39,9 @@ export const useMainStore = defineStore('main', () => {
   // Loading states for different operations
   const loadingStates = ref<Record<string, boolean>>({})
 
+  // Temporary messages for user feedback
+  const temporaryMessage = ref<{ text: string; type: 'success' | 'error' | 'info'; timestamp: number } | null>(null)
+
   // Computed properties
   const isConnected = computed(() => connectionState.value === 'connected')
   const needsApiKey = computed(() => serverInfo.value?.api_key_required && !apiKey.value)
@@ -90,6 +93,16 @@ export const useMainStore = defineStore('main', () => {
   // Set loading state for specific operation
   function setLoading(operation: string, loading: boolean) {
     loadingStates.value[operation] = loading
+  }
+
+  // Set temporary message for user feedback
+  function setTemporaryMessage(text: string, type: 'success' | 'error' | 'info', duration: number = 3000) {
+    temporaryMessage.value = { text, type, timestamp: Date.now() }
+    setTimeout(() => {
+      if (temporaryMessage.value && temporaryMessage.value.timestamp === temporaryMessage.value.timestamp) {
+        temporaryMessage.value = null
+      }
+    }, duration)
   }
 
   // Update API key and recreate client
@@ -360,6 +373,7 @@ export const useMainStore = defineStore('main', () => {
     discoveredModels,
     defaultBindings,
     loadingStates,
+    temporaryMessage,
 
     // Computed
     isConnected,
@@ -368,6 +382,7 @@ export const useMainStore = defineStore('main', () => {
 
     // Actions
     setApiKey,
+    setTemporaryMessage,
     checkHealth,
     initialize,
     clearData,
