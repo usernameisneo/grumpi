@@ -1,0 +1,35 @@
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #1a237e;
+  color: white;
+  overflow-x: hidden;
+}
+
+#app {
+  min-height: 100vh;
+  background: #1a237e;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d47a1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1565c0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #1976d2;
+}

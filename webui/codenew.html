@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOLLMS GUI - New Version (Broken)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .code-block { background: #f8f8f8; padding: 10px; border-radius: 4px; overflow-x: auto; font-family: monospace; font-size: 12px; }
+        h1, h2 { color: #333; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; color: #856404; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LOLLMS GUI - New Version (Current Broken Implementation)</h1>
+        
+        <div class="warning">
+            <strong>WARNING:</strong> This is the broken version that stripped away functionality and replaced comprehensive components with basic connection management.
+        </div>
+
+        <div class="section">
+            <h2>New Store Implementation (stores/main.ts)</h2>
+            <div class="code-block">
+// New store - focused on connection management but lost functionality
+import { ref, computed } from 'vue'
+import { defineStore } from 'pinia'
+import axios, { AxiosError } from 'axios'
+
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error' | 'auth_required'
+
+interface HealthResponse {
+  status: string
+  version: string
+  api_key_required: boolean
+}
+
+export const useMainStore = defineStore('main', () => {
+  // Connection state management
+  const connectionState = ref&lt;ConnectionState&gt;('disconnected')
+  const serverInfo = ref&lt;HealthResponse | null&gt;(null)
+  const apiKey = ref(localStorage.getItem('lollms_api_key') || '')
+  const lastError = ref&lt;string&gt;('')
+  
+  // Feature availability (discovered progressively)
+  const availableFeatures = ref&lt;Set&lt;string&gt;&gt;(new Set())
+  
+  // Data from working endpoints - SIMPLIFIED AND LOST FUNCTIONALITY
+  const bindingTypes = ref&lt;any[]&gt;([])
+  const activeBindings = ref&lt;any[]&gt;([])
+  const personalities = ref&lt;any[]&gt;([])
+  const functions = ref&lt;any[]&gt;([])
+  const discoveredModels = ref&lt;Record&lt;string, string[]&gt;&gt;({})
+  const defaultBindings = ref&lt;any&gt;({})
+  
+  // Loading states for different operations
+  const loadingStates = ref&lt;Record&lt;string, boolean&gt;&gt;({})
+  
+  // Computed properties
+  const isConnected = computed(() =&gt; connectionState.value === 'connected')
+  const needsApiKey = computed(() =&gt; serverInfo.value?.api_key_required && !apiKey.value)
+  const canMakeAuthenticatedRequests = computed(() =&gt; 
+    isConnected.value && (!serverInfo.value?.api_key_required || apiKey.value)
+  )
+
+  // PROBLEM: Lost all the rich functionality from the original store
+  // PROBLEM: Oversimplified the data structures
+  // PROBLEM: Removed comprehensive error handling
+  // PROBLEM: Lost the sophisticated API integration
+
+  return {
+    // State
+    connectionState,
+    serverInfo,
+    apiKey,
+    lastError,
+    availableFeatures,
+    bindingTypes,
+    activeBindings,
+    personalities,
+    functions,
+    discoveredModels,
+    defaultBindings,
+    loadingStates,
+    
+    // Computed
+    isConnected,
+    needsApiKey,
+    canMakeAuthenticatedRequests,
+    
+    // Actions - BASIC AND INCOMPLETE
+    setApiKey,
+    checkHealth,
+    initialize,
+    clearData,
+    testEndpoint,
+    loadBindings,
+    loadPersonalities,
+    loadFunctions,
+    loadDiscoveredModels,
+    loadDefaultBindings,
+    generate,
+    getModelInfo,
+    getAvailableModels
+  }
+})
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>New App.vue (Broken)</h2>
+            <div class="code-block">
+&lt;template&gt;
+  &lt;div class="app"&gt;
+    &lt;nav class="nav"&gt;
+      &lt;div class="nav-brand"&gt;
+        &lt;span class="brand-text"&gt;LOLLMS Server&lt;/span&gt;
+        &lt;span class="brand-status" :class="statusClass"&gt;{{ statusText }}&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;div class="nav-items"&gt;
+        &lt;button 
+          v-for="view in availableViews" 
+          :key="view.id"
+          @click="currentView = view.id"
+          :class="{ active: currentView === view.id }"
+          class="nav-btn"
+          :disabled="view.requiresAuth && !store.canMakeAuthenticatedRequests"
+        &gt;
+          &lt;span class="nav-icon"&gt;{{ view.icon }}&lt;/span&gt;
+          &lt;span class="nav-label"&gt;{{ view.label }}&lt;/span&gt;
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/nav&gt;
+
+    &lt;main class="main"&gt;
+      &lt;!-- PROBLEM: Components lost their rich functionality --&gt;
+      &lt;DashboardView v-if="currentView === 'dashboard'" /&gt;
+      &lt;GenerateView v-else-if="currentView === 'generate'" /&gt;
+      &lt;BindingsView v-else-if="currentView === 'bindings'" /&gt;
+      &lt;PersonalitiesView v-else-if="currentView === 'personalities'" /&gt;
+      &lt;ModelsView v-else-if="currentView === 'models'" /&gt;
+      &lt;FunctionsView v-else-if="currentView === 'functions'" /&gt;
+      &lt;ConfigView v-else-if="currentView === 'config'" /&gt;
+    &lt;/main&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script setup lang="ts"&gt;
+// PROBLEM: Oversimplified the view management
+// PROBLEM: Lost the comprehensive component architecture
+// PROBLEM: Focused too much on connection state instead of functionality
+&lt;/script&gt;
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>New ConnectionManager.vue (Over-engineered)</h2>
+            <div class="code-block">
+&lt;template&gt;
+  &lt;div class="connection-manager"&gt;
+    &lt;!-- PROBLEM: This component became the focus instead of enhancing existing functionality --&gt;
+    &lt;div class="connection-header"&gt;
+      &lt;div class="server-status"&gt;
+        &lt;div class="status-indicator" :class="statusClass"&gt;&lt;/div&gt;
+        &lt;div class="status-info"&gt;
+          &lt;div class="status-text"&gt;{{ statusText }}&lt;/div&gt;
+          &lt;div class="server-info" v-if="store.serverInfo"&gt;
+            LOLLMS Server {{ store.serverInfo.version }}
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;!-- PROBLEM: API key setup became overly complex --&gt;
+    &lt;div v-if="store.needsApiKey" class="api-key-section"&gt;
+      &lt;!-- Complex API key management that should have been simple --&gt;
+    &lt;/div&gt;
+
+    &lt;!-- PROBLEM: Feature discovery became the main focus --&gt;
+    &lt;div class="features-section"&gt;
+      &lt;!-- Over-engineered feature testing --&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;!-- PROBLEM: This component replaced the rich functionality of other components --&gt;
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Problems with New Version</h2>
+            <ul>
+                <li><strong>Lost Rich Functionality:</strong> Stripped away comprehensive features from GenerateView, ModelsView, ConfigView</li>
+                <li><strong>Over-focused on Connection:</strong> Made connection management the main feature instead of an enhancement</li>
+                <li><strong>Simplified Data Structures:</strong> Lost sophisticated data handling and processing</li>
+                <li><strong>Removed Advanced UI:</strong> Lost professional layouts, styling, and interactive elements</li>
+                <li><strong>Broke Component Independence:</strong> Made components dependent on connection state</li>
+                <li><strong>Lost Utility Functions:</strong> Removed helpful functions like model family detection, copy utilities</li>
+                <li><strong>Oversimplified Store:</strong> Reduced comprehensive store to basic connection management</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

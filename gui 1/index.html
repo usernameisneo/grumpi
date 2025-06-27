@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>lollms_server GUI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>lollms_server Control Panel</h1>
+
+        <!-- Authentication Section -->
+        <div class="section" id="auth-section">
+            <h2>Authentication</h2>
+            <div class="input-group">
+                <label for="api-key">API Key:</label>
+                <input type="password" id="api-key" placeholder="Enter your API Key">
+            </div>
+            <button id="login-btn">Login</button>
+        </div>
+
+        <!-- Main Application Section (hidden until authenticated) -->
+        <div class="main-app-section" id="app-section" style="display: none;">
+
+            <!-- Model and Binding Selection -->
+            <div class="section" id="selection-section">
+                <h2>Configuration</h2>
+                <div class="input-group">
+                    <label for="binding-select">Select Binding:</label>
+                    <select id="binding-select">
+                        <option value="">Loading Bindings...</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="model-select">Select Model:</label>
+                    <select id="model-select">
+                        <option value="">Loading Models...</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="personality-select">Select Personality:</label>
+                    <select id="personality-select">
+                        <option value="">Loading Personalities...</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Generation Section -->
+            <div class="section" id="generation-section">
+                <h2>Generation</h2>
+                <div class="input-group">
+                    <label for="prompt-input">Prompt:</label>
+                    <textarea id="prompt-input" rows="5" placeholder="Enter your prompt here..."></textarea>
+                </div>
+                <div class="input-group">
+                    <label for="generation-type">Generation Type:</label>
+                    <select id="generation-type">
+                        <option value="text">Text-to-Text</option>
+                        <option value="image">Text-to-Image</option>
+                        <option value="video">Text-to-Video</option>
+                        <option value="audio">Text-to-Audio</option>
+                    </select>
+                </div>
+                <div class="input-group" id="file-upload-group" style="display: none;">
+                    <label for="file-input">Upload File (for multimodal input):</label>
+                    <input type="file" id="file-input">
+                </div>
+                <button id="generate-btn">Generate</button>
+            </div>
+
+            <!-- Output Section -->
+            <div class="section" id="output-section">
+                <h2>Output</h2>
+                <pre id="output-display"></pre>
+                <div id="media-output"></div>
+            </div>
+
+            <!-- Status/Error Messages -->
+            <div class="section" id="status-section">
+                <p id="status-message"></p>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
+
+

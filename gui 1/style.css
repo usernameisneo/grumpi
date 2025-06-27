@@ -1,0 +1,212 @@
+
+body {
+    font-family: sans-serif;
+    background-color: #000080; /* Mid-blue theme */
+    color: #FFFFFF; /* White high-contrast font */
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    background-color: #000080; /* Mid-blue theme */
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 20px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 600px; /* Adjust as needed for efficient space */
+}
+
+h1 {
+    text-align: center;
+    margin-top: 0;
+}
+
+.input-group {
+    margin-bottom: 10px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+input[type="text"],
+input[type="email"] {
+    width: calc(100% - 12px); /* Adjust for padding and border */
+    padding: 8px;
+    border: 1px solid #FFFFFF; /* White border outlines */
+    background-color: #000080; /* Mid-blue theme */
+    color: #FFFFFF; /* White high-contrast font */
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder {
+    color: #CCCCCC; /* Lighter white for placeholder */
+}
+
+button {
+    background-color: #FFFFFF; /* White button */
+    color: #000080; /* Mid-blue font */
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 10px 15px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.output-area {
+    margin-top: 20px;
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 10px;
+}
+
+.output-area h2 {
+    margin-top: 0;
+}
+
+
+
+
+body {
+    font-family: sans-serif;
+    background-color: #000080; /* Mid-blue theme */
+    color: #FFFFFF; /* White high-contrast font */
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+
+.container {
+    background-color: #000080; /* Mid-blue theme */
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 15px; /* Reduced padding for efficient space */
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 700px; /* Adjusted max-width for better fit */
+    display: flex;
+    flex-direction: column;
+    gap: 10px; /* Space between sections */
+}
+
+h1 {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.8em; /* Slightly smaller for efficient space */
+}
+
+.section {
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 15px;
+    margin-bottom: 10px; /* Space between sections */
+    background-color: #000080; /* Mid-blue theme */
+}
+
+.section h2 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.4em; /* Slightly smaller for efficient space */
+}
+
+.input-group {
+    margin-bottom: 8px; /* Reduced margin for efficient space */
+}
+
+label {
+    display: block;
+    margin-bottom: 3px; /* Reduced margin for efficient space */
+    font-weight: bold;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+textarea,
+select {
+    width: calc(100% - 18px); /* Adjust for padding and border */
+    padding: 8px;
+    border: 1px solid #FFFFFF; /* White border outlines */
+    background-color: #000080; /* Mid-blue theme */
+    color: #FFFFFF; /* White high-contrast font */
+    box-sizing: border-box;
+    -webkit-appearance: none; /* Remove default browser styling for select */
+    -moz-appearance: none;
+    appearance: none;
+}
+
+input[type="file"] {
+    width: 100%;
+    padding: 8px 0;
+    color: #FFFFFF;
+}
+
+input[type="text"]::placeholder,
+input[type="password"]::placeholder,
+input[type="email"]::placeholder,
+textarea::placeholder {
+    color: #CCCCCC; /* Lighter white for placeholder */
+}
+
+button {
+    background-color: #FFFFFF; /* White button */
+    color: #000080; /* Mid-blue font */
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 10px 15px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 10px;
+    font-weight: bold;
+}
+
+button:hover {
+    background-color: #E0E0E0;
+}
+
+.output-area {
+    margin-top: 10px;
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 10px;
+    background-color: #000080; /* Mid-blue theme */
+}
+
+#output-display {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 200px; /* Limit height for efficient space */
+    overflow-y: auto;
+    border: 1px solid #FFFFFF; /* White border outlines */
+    padding: 8px;
+    background-color: #000080;
+    color: #FFFFFF;
+}
+
+#media-output img,
+#media-output video,
+#media-output audio {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin-top: 10px;
+    border: 1px solid #FFFFFF; /* White border outlines */
+}
+
+#status-message {
+    color: #FFD700; /* Gold for status messages */
+    font-weight: bold;
+    text-align: center;
+    margin-top: 10px;
+}
+
+.main-app-section {
+    display: none; /* Hidden by default, shown after login */
+}
+
+
