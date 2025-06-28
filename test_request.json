@@ -1,0 +1,10 @@
+{
+  "input_data": [
+    {
+      "type": "text",
+      "role": "user_prompt", 
+      "data": "Hello! Can you tell me a short joke?"
+    }
+  ],
+  "stream": false
+}
